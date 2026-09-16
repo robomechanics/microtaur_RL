@@ -1,0 +1,15 @@
+# Runtime dependencies for the Microtaur MJLab velocity project.
+# Recommended install from project root:
+#   python -m pip install -r requirements.txt
+#   python -m pip install -e .
+#
+# Notes:
+# - mujoco is included because the Python code imports `mujoco` directly.
+# - For CUDA-specific PyTorch wheels, install the torch wheel matching your CUDA setup
+#   before this file, then rerun this file if needed.
+
+mjlab>=1.1.0
+mujoco>=3.2.0
+numpy>=1.26
+matplotlib>=3.10.9
+torch>=2.4

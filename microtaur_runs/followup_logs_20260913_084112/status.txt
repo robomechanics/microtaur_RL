@@ -1,0 +1,5 @@
+[08:41:12] START active_yaw_rough_with_flag (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260913_084112/active_yaw_rough_with_flag.log)
+[09:50:39] END active_yaw_rough_with_flag |[1m Learning iteration 4499/4500 [0m 
+[09:50:39] START active_pitch_rough_with_flag (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260913_084112/active_pitch_rough_with_flag.log)
+[10:58:19] END active_pitch_rough_with_flag |[1m Learning iteration 4499/4500 [0m 
+[10:58:19] ALL DONE (with_flag)

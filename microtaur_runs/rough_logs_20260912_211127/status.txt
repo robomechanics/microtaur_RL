@@ -1,0 +1,10 @@
+[21:11:27] Microtaur rough-terrain retraining: 4500 iterations, status in /home/naomio/Documents/spines_help/microtaur_runs/rough_logs_20260912_211127
+[21:11:27] START active_twist (4500 iterations, log: /home/naomio/Documents/spines_help/microtaur_runs/rough_logs_20260912_211127/active_twist.log)
+[21:13:27] START active_pitch (4500 iterations, log: /home/naomio/Documents/spines_help/microtaur_runs/rough_logs_20260912_211127/active_pitch.log)
+[23:31:03] END active_pitch exit=1 |[1m Learning iteration 3565/4500 [0m 
+[23:31:03] START active_yaw (4500 iterations, log: /home/naomio/Documents/spines_help/microtaur_runs/rough_logs_20260912_211127/active_yaw.log)
+[23:44:34] END active_yaw exit=1 |[1m Learning iteration 400/4500 [0m 
+[23:54:04] END active_twist exit=0 |[1m Learning iteration 4499/4500 [0m 
+[23:54:04] START rigid (4500 iterations, log: /home/naomio/Documents/spines_help/microtaur_runs/rough_logs_20260912_211127/rigid.log)
+[00:53:07] END rigid exit=0 |[1m Learning iteration 4499/4500 [0m 
+[00:53:07] ALL DONE

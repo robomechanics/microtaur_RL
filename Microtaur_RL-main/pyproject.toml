@@ -1,0 +1,33 @@
+[project]
+name = "microtaur_velocity"
+version = "0.1.0"
+description = "Microtaur / Minitaur-style velocity training task for MJLab"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "mjlab>=1.1.0",
+    "mujoco>=3.2.0",
+    "numpy>=1.26",
+    "matplotlib>=3.10.9",
+    "torch>=2.4",
+    "pygame>=2.6.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.18,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.14",
+]
+
+[tool.ruff]
+indent-width = 2
+src = ["src/microtaur_velocity"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
+
+[project.entry-points."mjlab.tasks"]
+microtaur_velocity = "microtaur_velocity"

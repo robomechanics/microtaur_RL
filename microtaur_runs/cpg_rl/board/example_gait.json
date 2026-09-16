@@ -1,0 +1,16 @@
+{
+  "robot": "pitch",
+  "note": "Bench test, not a walking gait. Standing pose plus 0.05 rad on every joint at 1 Hz: diagonal legs (1+3, then 2+4) alternately lengthen and shorten (a and e move opposite ways, no fore-aft swing), spine +-0.05 rad around 0.",
+  "frequency_hz": 1.0,
+  "control_hz": 50,
+  "joint_order": [
+    "leg1_a_joint_act", "leg1_e_joint_act",
+    "leg2_a_joint_act", "leg2_e_joint_act",
+    "leg3_a_joint_act", "leg3_e_joint_act",
+    "leg4_a_joint_act", "leg4_e_joint_act",
+    "spine_joint_act"
+  ],
+  "offset_rad": [0.45, -0.45, -0.45, 0.45, -0.45, 0.45, 0.45, -0.45, 0.0],
+  "cos_rad": [[0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0]],
+  "sin_rad": [[-0.05], [0.05], [-0.05], [0.05], [0.05], [-0.05], [0.05], [-0.05], [0.05]]
+}

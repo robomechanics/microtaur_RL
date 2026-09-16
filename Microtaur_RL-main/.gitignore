@@ -1,0 +1,74 @@
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments / local package managers
+.venv/
+venv/
+env/
+ENV/
+uv.lock
+pip-wheel-metadata/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local environment/config secrets
+.env
+.env.*
+!.env.example
+
+# Training logs / experiment trackers
+logs/
+log/
+runs/
+outputs/
+wandb/
+tensorboard/
+lightning_logs/
+mlruns/
+
+# RL checkpoints / exported policies / generated artifacts
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.jit
+*.pkl
+*.pickle
+*.npz
+*.npy
+
+# MuJoCo / rendering temporary files
+*.mjb
+*.mp4
+*.avi
+*.mov
+*.gif
+screenshots/
+frames/
+recordings/
+
+# Large/local datasets or generated terrain dumps
+cache/
+data/
+terrain_cache/
+
+# Keep robot source assets tracked.
+# Do NOT ignore microtaur_xmls/, XML files, STL/OBJ/mesh assets needed by the robot.

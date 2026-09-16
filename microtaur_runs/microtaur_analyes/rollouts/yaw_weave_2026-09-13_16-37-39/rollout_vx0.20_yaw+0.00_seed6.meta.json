@@ -1,0 +1,51 @@
+{
+  "task_id": "Mjlab-Velocity-Rough-microtaur_velocity",
+  "checkpoint": "/home/naomio/Documents/spines_help/microtaur_runs/active_yaw/logs/rsl_rl/microtaur_minitaur_velocity/2026-09-13_08-41-15_active_yaw_rough_with_flag/model_4499.pt",
+  "seed": 6,
+  "cmd_vx": 0.2,
+  "cmd_yaw": 0.0,
+  "mass_kg": 0.723783335692,
+  "g": 9.81,
+  "policy_dt": 0.02,
+  "n_steps": 800,
+  "sim_seconds": 16.0,
+  "action_dim": 9,
+  "joint_order": [
+    "leg1_a",
+    "leg1_e",
+    "leg2_a",
+    "leg2_e",
+    "leg3_a",
+    "leg3_e",
+    "leg4_a",
+    "leg4_e",
+    "spine"
+  ],
+  "has_spine": true,
+  "spine_joint": "spine_joint_act",
+  "root_body": "battery",
+  "v_eps": 0.02,
+  "env_cfg_revision": "2026-08-30-active-yaw-spine-residual-v1",
+  "terrain": "weave",
+  "terrain_kw": {
+    "spacing": 0.8,
+    "num_poles": 5
+  },
+  "height_termination_relaxed_m": 0.0,
+  "weave_drive": true,
+  "lane_keep": false,
+  "raw_action": true,
+  "clip_actions": 1.0,
+  "weave_driver": {
+    "mode": "weave",
+    "spacing": 0.8,
+    "amplitude": 0.06,
+    "y_center": 0.0,
+    "lookahead_m": 0.12,
+    "k_yaw": 3.0
+  },
+  "substep_log": true,
+  "physics_dt": 0.004999999888241291,
+  "variant": "yaw",
+  "mjcf_variant": "active_yaw_microtaur"
+}

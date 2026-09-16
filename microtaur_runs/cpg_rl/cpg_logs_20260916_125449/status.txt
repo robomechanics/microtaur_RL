@@ -1,0 +1,23 @@
+[12:54:49] four CPG runs started (4500 iterations, 2048 envs each)
+./train_cpg_4variants.sh: line 61: wait: `[12:54:49] START rigid_cpg (fit: fit_rigid.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/rigid_cpg.log)
+292328': not a pid or valid job spec
+./train_cpg_4variants.sh: line 61: wait: `[12:54:49] START active_twist_cpg (fit: fit_roll.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/active_twist_cpg.log)
+292331': not a pid or valid job spec
+./train_cpg_4variants.sh: line 61: wait: `[12:54:49] START active_pitch_cpg (fit: fit_pitch.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/active_pitch_cpg.log)
+292334': not a pid or valid job spec
+./train_cpg_4variants.sh: line 61: wait: `[12:54:49] START active_yaw_cpg (fit: fit_yaw.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/active_yaw_cpg.log)
+292337': not a pid or valid job spec
+[12:54:49] END active_pitch_cpg |
+[12:54:49] END active_twist_cpg |
+[12:54:49] END active_yaw_cpg |
+[12:54:49] END rigid_cpg |
+[12:54:49] ALL DONE
+[12:59:42] START active_twist_cpg (fit: fit_roll.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/active_twist_cpg.log)
+[12:59:42] START active_pitch_cpg (fit: fit_pitch.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/active_pitch_cpg.log)
+[12:59:42] START active_yaw_cpg (fit: fit_yaw.json, log: /home/naomio/Documents/spines_help/microtaur_runs/cpg_rl/cpg_logs_20260916_125449/active_yaw_cpg.log)
+[12:59:42] four CPG runs started (4500 iterations, 2048 envs each)
+[15:33:34] CRASH active_pitch_cpg |[1m Learning iteration 2799/4500 [0m 
+[15:33:34] CRASH active_twist_cpg |[1m Learning iteration 2802/4500 [0m 
+[15:33:34] CRASH active_yaw_cpg |[1m Learning iteration 2840/4500 [0m 
+[15:33:35] CRASH rigid_cpg |[1m Learning iteration 3786/4500 [0m 
+[15:33:35] ALL DONE

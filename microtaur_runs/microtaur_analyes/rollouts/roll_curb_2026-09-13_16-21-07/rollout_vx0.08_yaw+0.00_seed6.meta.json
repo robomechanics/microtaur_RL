@@ -1,0 +1,43 @@
+{
+  "task_id": "Mjlab-Velocity-Rough-microtaur_velocity",
+  "checkpoint": "/home/naomio/Documents/spines_help/microtaur_runs/active_twist/logs/rsl_rl/microtaur_minitaur_velocity/2026-09-13_13-41-21_active_twist_rough_with_flag/model_4499.pt",
+  "seed": 6,
+  "cmd_vx": 0.08,
+  "cmd_yaw": 0.0,
+  "mass_kg": 0.47884333569200005,
+  "g": 9.81,
+  "policy_dt": 0.02,
+  "n_steps": 800,
+  "sim_seconds": 16.0,
+  "action_dim": 9,
+  "joint_order": [
+    "leg1_a",
+    "leg1_e",
+    "leg2_a",
+    "leg2_e",
+    "leg3_a",
+    "leg3_e",
+    "leg4_a",
+    "leg4_e",
+    "spine"
+  ],
+  "has_spine": true,
+  "spine_joint": "spine_joint_act",
+  "root_body": "twisting_microtaur_bottom_half_motor_mount",
+  "v_eps": 0.02,
+  "env_cfg_revision": "2026-09-05-active-twist-emergent-v4-mean-bias-fix",
+  "terrain": "curb",
+  "terrain_kw": {
+    "curb_height": 0.015
+  },
+  "height_termination_relaxed_m": 0.015,
+  "weave_drive": false,
+  "lane_keep": false,
+  "raw_action": true,
+  "clip_actions": 1.0,
+  "weave_driver": null,
+  "substep_log": true,
+  "physics_dt": 0.004999999888241291,
+  "variant": "roll",
+  "mjcf_variant": "active_twist_microtaur"
+}

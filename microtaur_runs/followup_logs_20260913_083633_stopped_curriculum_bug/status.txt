@@ -1,0 +1,2 @@
+[08:36:33] follow-up queue started, status in /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260913_083633
+[08:36:33] START active_yaw_rough_resume_1400 (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260913_083633/active_yaw_rough_resume_1400.log)

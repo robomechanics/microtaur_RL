@@ -1,0 +1,110 @@
+{
+  "rigid": {
+    "primary_names": [
+      "leg1_foot_collision",
+      "leg2_foot_collision",
+      "leg3_foot_collision",
+      "leg4_foot_collision"
+    ],
+    "leg_to_channel": {
+      "leg1": 0,
+      "leg2": 1,
+      "leg3": 2,
+      "leg4": 3
+    },
+    "channel_to_corner": {
+      "0": "HR",
+      "1": "HL",
+      "2": "FL",
+      "3": "FR"
+    },
+    "site_columns": [
+      5,
+      10,
+      15,
+      20
+    ],
+    "permuted": false
+  },
+  "pitch": {
+    "primary_names": [
+      "leg1_foot_collision",
+      "leg2_foot_collision",
+      "leg4_foot_collision",
+      "leg3_foot_collision"
+    ],
+    "leg_to_channel": {
+      "leg1": 0,
+      "leg2": 1,
+      "leg3": 3,
+      "leg4": 2
+    },
+    "channel_to_corner": {
+      "0": "HR",
+      "1": "HL",
+      "3": "FL",
+      "2": "FR"
+    },
+    "site_columns": [
+      3,
+      6,
+      18,
+      13
+    ],
+    "permuted": true
+  },
+  "yaw": {
+    "primary_names": [
+      "leg1_foot_collision",
+      "leg2_foot_collision",
+      "leg3_foot_collision",
+      "leg4_foot_collision"
+    ],
+    "leg_to_channel": {
+      "leg1": 0,
+      "leg2": 1,
+      "leg3": 2,
+      "leg4": 3
+    },
+    "channel_to_corner": {
+      "0": "HR",
+      "1": "HL",
+      "2": "FL",
+      "3": "FR"
+    },
+    "site_columns": [
+      7,
+      12,
+      17,
+      22
+    ],
+    "permuted": false
+  },
+  "roll": {
+    "primary_names": [
+      "leg3_foot_collision",
+      "leg4_foot_collision",
+      "leg1_foot_collision",
+      "leg2_foot_collision"
+    ],
+    "leg_to_channel": {
+      "leg1": 2,
+      "leg2": 3,
+      "leg3": 0,
+      "leg4": 1
+    },
+    "channel_to_corner": {
+      "2": "HR",
+      "3": "HL",
+      "0": "FL",
+      "1": "FR"
+    },
+    "site_columns": [
+      17,
+      22,
+      7,
+      12
+    ],
+    "permuted": true
+  }
+}

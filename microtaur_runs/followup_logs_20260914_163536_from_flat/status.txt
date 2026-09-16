@@ -1,0 +1,9 @@
+[16:35:36] START rigid_rough_from_flat (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260914_163536_from_flat/rigid_rough_from_flat.log)
+[17:34:24] END rigid_rough_from_flat |[1m Learning iteration 4499/4500 [0m 
+[17:34:24] START active_twist_rough_from_flat (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260914_163536_from_flat/active_twist_rough_from_flat.log)
+[18:47:26] END active_twist_rough_from_flat |[1m Learning iteration 4499/4500 [0m 
+[18:47:26] START active_pitch_rough_from_flat (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260914_163536_from_flat/active_pitch_rough_from_flat.log)
+[19:56:20] END active_pitch_rough_from_flat |[1m Learning iteration 4499/4500 [0m 
+[19:56:20] START active_yaw_rough_from_flat (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260914_163536_from_flat/active_yaw_rough_from_flat.log)
+[21:08:19] END active_yaw_rough_from_flat |[1m Learning iteration 4499/4500 [0m 
+[21:08:19] ALL DONE (from_flat)

@@ -1,0 +1,4 @@
+# Developer-only dependencies.
+-r requirements.txt
+
+ruff>=0.14.14

@@ -1,0 +1,5 @@
+[12:42:18] START rigid_rough_with_flag (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260913_124218/rigid_rough_with_flag.log)
+[13:41:17] END rigid_rough_with_flag |[1m Learning iteration 4499/4500 [0m 
+[13:41:17] START active_twist_rough_with_flag (log: /home/naomio/Documents/spines_help/microtaur_runs/followup_logs_20260913_124218/active_twist_rough_with_flag.log)
+[14:51:43] END active_twist_rough_with_flag |[1m Learning iteration 4499/4500 [0m 
+[14:51:43] ALL DONE (rigid_roll_with_flag)

@@ -1,0 +1,71 @@
+# ---- Python / env ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.swp
+.DS_Store
+*.bak*
+
+# ---- Training logs / experiment trackers ----
+logs/
+log/
+runs/
+outputs/
+wandb/
+tensorboard/
+events.out.tfevents.*
+*.log
+
+# ---- Checkpoints / exported policies ----
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.jit
+*.pkl
+*.pickle
+*.npz
+*.npy
+*.tflite
+*.pb
+saved_model*/
+*.data-00000-of-*
+variables.index
+
+# ---- Media ----
+*.mp4
+*.avi
+*.mov
+*.gif
+videos/
+videos_full/
+frames/
+recordings/
+
+# ---- Archives ----
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# ---- Old / scratch directories ----
+old/
+old_distilling/
+
+# ---- Big result dumps inside microtaur_runs ----
+microtaur_runs/**/*.csv
+claude.md
+*.pre_cpg
