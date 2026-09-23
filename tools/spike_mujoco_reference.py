@@ -183,6 +183,28 @@ def export_model(m: mujoco.MjModel, path: str) -> None:
   print(f"exported {len(bodies)} bodies, {len(joints)} hinges, {len(geoms)} collision geoms, {len(loops)} loops -> {path}")
 
 
+SIGNS = (1.0, -1.0, -1.0, 1.0)  # MINITAUR_SWING_SIGNS
+TROT_COMMON, TROT_DIFF, TROT_HZ = 0.25, 0.15, 2.0
+
+
+def motion_delta(t: float, motion: str) -> np.ndarray:
+  """Motor-target offset from stand, ordered as MOTORS (leg1 a, leg1 e, ...).
+
+  trot: diagonal pairs (1,3) and (2,4) in antiphase, using the training code's
+  paired map da = sign*(common - diff), de = sign*(common + diff).
+  """
+  out = np.zeros(8)
+  if motion != "trot":
+    return out
+  for leg in range(4):
+    ph = 2 * math.pi * TROT_HZ * t + (0.0 if leg in (0, 2) else math.pi)
+    common = TROT_COMMON * math.sin(ph)
+    diff = TROT_DIFF * math.cos(ph)
+    out[2 * leg] = SIGNS[leg] * (common - diff)
+    out[2 * leg + 1] = SIGNS[leg] * (common + diff)
+  return out
+
+
 def dc_motor_torque(err, qd, kd):
   tau = KP * err - kd * qd
   tmax = np.clip(SATURATION_EFFORT * (1.0 - qd / VELOCITY_LIMIT), 0.0, EFFORT_LIMIT)
@@ -208,6 +230,8 @@ def main():
   ap.add_argument("--ls-iterations", type=int, default=20)
   ap.add_argument("--no-mass-patch", action="store_true")
   ap.add_argument("--no-frictionloss", action="store_true")
+  ap.add_argument("--motion", choices=("stand", "trot", "drop"), default="stand")
+  ap.add_argument("--drop-height", type=float, default=0.010)
   ap.add_argument("--json", type=str, default="")
   ap.add_argument("--export-model", type=str, default="")
   args = ap.parse_args()
@@ -223,6 +247,9 @@ def main():
   motor_dadr = np.array([m.joint(n).dofadr[0] for n in MOTORS])
   full_qadr = np.array([m.joint(n).qposadr[0] for n in FULL])
   target = np.array([full_q[FULL.index(n)] for n in MOTORS])
+  if args.motion == "drop":
+    d.qpos[2] += args.drop_height
+    mujoco.mj_forward(m, d)
 
   print(f"mujoco {mujoco.__version__}  timestep {m.opt.timestep}  iterations {m.opt.iterations}"
         f"  ls_iterations {m.opt.ls_iterations}  cone {m.opt.cone}  solver {m.opt.solver}  kd {args.kd}")
@@ -243,7 +270,9 @@ def main():
     q = d.qpos[motor_qadr]
     qd = d.qvel[motor_dadr]
     d.qfrc_applied[:] = 0.0
-    d.qfrc_applied[motor_dadr] = dc_motor_torque(target - q, qd, args.kd)
+    if t % 4 == 0:  # targets update at the 50 Hz control rate (decimation 4)
+      tgt = target + motion_delta(t * m.opt.timestep, args.motion)
+    d.qfrc_applied[motor_dadr] = dc_motor_torque(tgt - q, qd, args.kd)
     mujoco.mj_step(m, d)
     for k, (_, s1, s2) in enumerate(pairs):
       gaps[t, k] = np.linalg.norm(d.site_xpos[s1] - d.site_xpos[s2])
@@ -271,6 +300,8 @@ def main():
   print("closing-site gaps (settled), metres:")
   for k, (nme, _, _) in enumerate(pairs):
     print(f"  {nme:26s} mean {g[:,k].mean():.3e}  p95 {np.percentile(g[:,k],95):.3e}  max {g[:,k].max():.3e}")
+  print(f"motion {args.motion}  FULL RUN: mean {gaps.mean():.3e}  p95 {np.percentile(gaps,95):.3e}  p99 {np.percentile(gaps,99):.3e}  max {gaps.max():.3e}"
+        f"  root z min {root[:,2].min():.5f}")
   print(f"ALL pairs: mean {g.mean():.3e}  p95 {np.percentile(g,95):.3e}  max {g.max():.3e}  (full-run max {gaps.max():.3e})")
   print(f"equality efc_pos |max| settled: mean {eq_viol[s].mean():.3e}  max {eq_viol[s].max():.3e}")
   hf = hf_rms(q_hist[s], m.opt.timestep)
@@ -296,7 +327,9 @@ def main():
       "total_mass": float(m.body_mass.sum()),
       "root_z_mean": float(root[s, 2].mean()),
       "gap_mean": float(g.mean()), "gap_p95": float(np.percentile(g, 95)), "gap_max": float(g.max()),
-      "hf_rms_max": float(hf.max()), "q_mean": q_hist[s].mean(0).tolist(), "joint_names": list(FULL),
+      "hf_rms_max": float(hf.max()), "motion": args.motion,
+      "full_gap_mean": float(gaps.mean()), "full_gap_p95": float(np.percentile(gaps, 95)),
+      "full_gap_p99": float(np.percentile(gaps, 99)), "full_gap_max": float(gaps.max()), "q_mean": q_hist[s].mean(0).tolist(), "joint_names": list(FULL),
       "stand_full_q": full_q.tolist(), "nominal_root_z": nominal_root_z,
     }, indent=1))
 

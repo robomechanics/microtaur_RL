@@ -39,6 +39,8 @@ ap.add_argument("--kd", type=float, default=0.045)
 ap.add_argument("--dt", type=float, default=0.005)
 ap.add_argument("--decimation", type=int, default=4)
 ap.add_argument("--jitter_envs", type=int, default=16)
+ap.add_argument("--motion", choices=("stand", "trot", "drop"), default="stand")
+ap.add_argument("--drop_height", type=float, default=0.010)
 ap.add_argument("--out", default="")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
@@ -264,11 +266,31 @@ def closure_gaps() -> torch.Tensor:
 
 jorder = [robot.joint_names.index(n) for n in M["stand_q"]]
 target = robot.data.default_joint_pos.clone()
+motor_cols = torch.tensor([robot.joint_names.index(n) for n in MOTORS], device=dev)
+SIGNS = (1.0, -1.0, -1.0, 1.0)  # MINITAUR_SWING_SIGNS
+TROT_COMMON, TROT_DIFF, TROT_HZ = 0.25, 0.15, 2.0
+
+
+def motion_target(t: float) -> torch.Tensor:
+  """Same trot as spike_mujoco_reference.motion_delta (MOTORS order: leg1 a, leg1 e, ...)."""
+  if args.motion != "trot":
+    return target
+  delta = torch.zeros(8, device=dev)
+  for leg in range(4):
+    ph = 2 * math.pi * TROT_HZ * t + (0.0 if leg in (0, 2) else math.pi)
+    common, diff = TROT_COMMON * math.sin(ph), TROT_DIFF * math.cos(ph)
+    delta[2 * leg] = SIGNS[leg] * (common - diff)
+    delta[2 * leg + 1] = SIGNS[leg] * (common + diff)
+  out = target.clone()
+  out[:, motor_cols] += delta
+  return out
 
 
 def reset_all():
   rs = robot.data.default_root_state.clone()
   rs[:, :3] += scene.env_origins
+  if args.motion == "drop":
+    rs[:, 2] += args.drop_height
   robot.write_root_state_to_sim(rs)
   robot.write_joint_state_to_sim(robot.data.default_joint_pos.clone(), torch.zeros_like(robot.data.default_joint_vel))
   scene.reset()
@@ -291,7 +313,7 @@ torch.cuda.synchronize()
 t0 = time.perf_counter()
 for k in range(n_phys):
   if k % args.decimation == 0:
-    robot.set_joint_position_target(target)
+    robot.set_joint_position_target(motion_target(k * args.dt))
   scene.write_data_to_sim()
   sim.step(render=False)
   scene.update(args.dt)
@@ -304,7 +326,9 @@ for k in range(n_phys):
     nan_step = k
 torch.cuda.synchronize()
 t_measure = time.perf_counter() - t0
-root_xy = robot.data.root_link_pos_w[:, :2] - scene.env_origins[:, :2]
+root_xy = (robot.data.root_link_pos_w[:, :2] - scene.env_origins[:, :2]).cpu()
+# Statistics on CPU: the GPU may be shared and nearly full.
+gap_hist, q_hist, rootz, tilt = gap_hist.cpu(), q_hist.cpu(), rootz.cpu(), tilt.cpu()
 
 # ---- statistics over the settled second half ----
 h = slice(n_phys // 2, n_phys)
@@ -330,12 +354,22 @@ fell = int(((rootz[h] < 0.05217) | ~torch.isfinite(rootz[h])).any(dim=0).sum())
 # joint jitter: residual of a centred 0.1 s moving average (content above ~10 Hz)
 w = max(3, int(round(0.1 / args.dt)) | 1)
 qh = q_hist[h].permute(1, 2, 0).reshape(-1, 1, q_hist[h].shape[0])
-lo = torch.nn.functional.conv1d(qh, torch.ones(1, 1, w, device=dev) / w, padding=w // 2)
+lo = torch.nn.functional.conv1d(qh, torch.ones(1, 1, w) / w, padding=w // 2)
 res = (qh - lo)[..., w:-w].reshape(J, 16, -1)
 hf = torch.sqrt((res**2).mean(dim=-1))  # [J, 16]
 
 rz = rootz[h]
+fell_full = int(((rootz < 0.05217) | ~torch.isfinite(rootz)).any(dim=0).sum())
 res_out = {
+  "motion": args.motion, "full_gap_mean": float(q_all.mean()), "full_gap_p95": pct(q_all, 0.95),
+  "full_gap_p99": pct(q_all, 0.99), "full_gap_max": float(q_all.max()), "rootz_min": float(torch.nan_to_num(rootz, nan=0.0).min()),
+  "fell_or_nan_envs_fullrun": fell_full,
+  "frac_samples_gt_0p5mm": float((q_all > 5e-4).float().mean()), "frac_samples_gt_1mm": float((q_all > 1e-3).float().mean()),
+  "frac_samples_gt_2mm": float((q_all > 2e-3).float().mean()),
+  "t_of_max_s": float(int(torch.nan_to_num(gap_hist, nan=0.0).amax(dim=(1, 2)).argmax()) * args.dt),
+  "per_step_max_after_1s_max": float(torch.nan_to_num(gap_hist[int(1.0 / args.dt):], nan=0.0).max()),
+  "per_pair_max": torch.nan_to_num(gap_hist, nan=0.0).amax(dim=(0, 1)).tolist(),
+  "envs_fullrun_gap_gt_1mm": int((torch.nan_to_num(gap_hist, nan=1.0).amax(dim=(0, 2)) > 1e-3).sum()),
   "num_envs": N, "loop": args.loop, "pos_iters": args.pos_iters, "vel_iters": args.vel_iters, "kd": args.kd,
   "gap_mean": float(gf.mean()), "gap_p95": pct(gf, 0.95), "gap_max": float(gf.max()),
   "gap_max_fullrun": float(q_all.max()),
