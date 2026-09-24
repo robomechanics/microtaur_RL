@@ -41,10 +41,12 @@ ap.add_argument("--decimation", type=int, default=4)
 ap.add_argument("--jitter_envs", type=int, default=16)
 ap.add_argument("--motion", choices=("stand", "trot", "drop"), default="stand")
 ap.add_argument("--drop_height", type=float, default=0.010)
+ap.add_argument("--replay", default="", help="npz from cpg_rl/openloop_spine_cpg.py; replays its s_target open-loop")
+ap.add_argument("--gui", action="store_true", help="open the Isaac Sim window and loop the replay in real time")
 ap.add_argument("--out", default="")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
-args.headless = True
+args.headless = not args.gui
 app = AppLauncher(args).app
 
 # Kit swallows stdout; write everything to a log file as well.
@@ -286,18 +288,90 @@ def motion_target(t: float) -> torch.Tensor:
   return out
 
 
+REPLAY = None
+if args.replay:
+  import importlib.util
+
+  _kp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Microtaur_RL-main", "src",
+                     "microtaur_velocity", "microtaur_kinematics.py")
+  _spec = importlib.util.spec_from_file_location("microtaur_kinematics", _kp)
+  KINM = importlib.util.module_from_spec(_spec)
+  sys.modules[_spec.name] = KINM
+  _spec.loader.exec_module(KINM)
+  Z = np.load(args.replay)
+  assert list(Z["motor_names"][:8]) == MOTORS, (list(Z["motor_names"]), MOTORS)
+  assert abs(float(Z["dt"]) - args.dt * args.decimation) < 1e-9, "replay dt must equal dt * decimation"
+  rec = np.arange(N) % Z["s_target"].shape[1]  # env i replays recorded robot i mod 32
+  REPLAY = {
+    "target": torch.tensor(Z["s_target"][:, rec, :8], device=dev, dtype=torch.float32),  # [T, N, 8]
+    "frames": Z["s_target"].shape[0],
+  }
+  kin = KINM.MicrotaurFiveBarKinematics()
+  q0 = Z["s_q"][0, rec, :8]
+  full = np.zeros((N, 16))
+  for i in range(N):
+    for leg in range(4):
+      full[i, 4 * leg:4 * leg + 4] = kin.forward_numpy(q0[i, 2 * leg], q0[i, 2 * leg + 1], leg_index=leg + 1).full
+  REPLAY["joint_pos"] = torch.tensor(full, device=dev, dtype=torch.float32)[:, np.argsort(jorder)]
+  g = Z["s_imu_gravity"][0, rec]  # projected gravity, body frame
+  pitch, roll = np.arcsin(np.clip(g[:, 0], -1, 1)), np.arctan2(-g[:, 1], -g[:, 2])
+  cr, sr, cp, sp = np.cos(roll / 2), np.sin(roll / 2), np.cos(pitch / 2), np.sin(pitch / 2)
+  REPLAY["quat"] = torch.tensor(np.stack([cr * cp, sr * cp, cr * sp, -sr * sp], 1), device=dev, dtype=torch.float32)
+  REPLAY["z"] = torch.tensor(Z["s_truth_pos"][0, rec, 2], device=dev, dtype=torch.float32)
+  REPLAY["lin_vel_b"] = torch.tensor(Z["s_truth_vel_b"][0, rec], device=dev, dtype=torch.float32)
+  REPLAY["ang_vel_b"] = torch.tensor(Z["s_imu_gyro"][0, rec], device=dev, dtype=torch.float32)
+  REPLAY["rec_speed"] = float(Z["m_forward_m_s"][rec].mean())
+  log(f"replay {args.replay}: {REPLAY['frames']} frames at {float(Z['dt'])} s, recorded forward speed {REPLAY['rec_speed']:.4f} m/s")
+  log(f"  recorded meta: {str(Z['meta'])}")
+
+
+def replay_target(k: int) -> torch.Tensor:
+  out = target.clone()
+  out[:, motor_cols] = REPLAY["target"][min(k // args.decimation, REPLAY["frames"] - 1)]
+  return out
+
+
 def reset_all():
   rs = robot.data.default_root_state.clone()
   rs[:, :3] += scene.env_origins
   if args.motion == "drop":
     rs[:, 2] += args.drop_height
+  jp = robot.data.default_joint_pos.clone()
+  if REPLAY is not None:
+    rs[:, 2] = scene.env_origins[:, 2] + REPLAY["z"]
+    rs[:, 3:7] = REPLAY["quat"]
+    rs[:, 7:10] = quat_apply(REPLAY["quat"], REPLAY["lin_vel_b"])
+    rs[:, 10:13] = quat_apply(REPLAY["quat"], REPLAY["ang_vel_b"])
+    jp = REPLAY["joint_pos"].clone()
   robot.write_root_state_to_sim(rs)
-  robot.write_joint_state_to_sim(robot.data.default_joint_pos.clone(), torch.zeros_like(robot.data.default_joint_vel))
+  robot.write_joint_state_to_sim(jp, torch.zeros_like(robot.data.default_joint_vel))
   scene.reset()
 
 
 reset_all()
 robot.update(0.0)
+
+if args.gui:
+  # Loop the replay (or the chosen motion) in real time, camera following env 0.
+  period = REPLAY["frames"] * args.decimation if REPLAY is not None else int(round(args.seconds / args.dt))
+  k = 0
+  while app.is_running():
+    t_wall = time.perf_counter()
+    if k % args.decimation == 0:
+      robot.set_joint_position_target(replay_target(k) if REPLAY is not None else motion_target(k * args.dt))
+    scene.write_data_to_sim()
+    render = k % args.decimation == args.decimation - 1
+    if render:
+      p = robot.data.root_link_pos_w[0].tolist()
+      sim.set_camera_view(eye=[p[0] - 0.35, p[1] - 0.45, p[2] + 0.22], target=p)
+    sim.step(render=render)
+    scene.update(args.dt)
+    k += 1
+    if k >= period:
+      reset_all()
+      k = 0
+    time.sleep(max(0.0, args.dt - (time.perf_counter() - t_wall)))
+  os._exit(0)
 g0 = closure_gaps()
 log(f"t=0 closure gaps: max {float(g0.max()):.3e} m")
 
@@ -313,10 +387,13 @@ torch.cuda.synchronize()
 t0 = time.perf_counter()
 for k in range(n_phys):
   if k % args.decimation == 0:
-    robot.set_joint_position_target(motion_target(k * args.dt))
+    robot.set_joint_position_target(replay_target(k) if REPLAY is not None else motion_target(k * args.dt))
   scene.write_data_to_sim()
   sim.step(render=False)
   scene.update(args.dt)
+  if k == 0:
+    start_pos = robot.data.root_link_pos_w.clone()
+    start_quat = robot.data.root_link_quat_w.clone()
   gap_hist[k] = closure_gaps()
   q_hist[k] = robot.data.joint_pos[:J][:, jorder]
   rootz[k] = robot.data.root_link_pos_w[:, 2] - scene.env_origins[:, 2]
@@ -327,6 +404,12 @@ for k in range(n_phys):
 torch.cuda.synchronize()
 t_measure = time.perf_counter() - t0
 root_xy = (robot.data.root_link_pos_w[:, :2] - scene.env_origins[:, :2]).cpu()
+# Forward progress along each robot's initial heading (body x axis at t=0).
+fwd0 = quat_apply(start_quat, torch.tensor([[1.0, 0.0, 0.0]], device=dev).expand(N, -1))
+fwd0[:, 2] = 0.0
+fwd0 = fwd0 / torch.linalg.norm(fwd0, dim=-1, keepdim=True)
+disp = robot.data.root_link_pos_w - start_pos
+forward_speed = ((disp * fwd0).sum(-1) / (n_phys * args.dt)).cpu()
 # Statistics on CPU: the GPU may be shared and nearly full.
 gap_hist, q_hist, rootz, tilt = gap_hist.cpu(), q_hist.cpu(), rootz.cpu(), tilt.cpu()
 
@@ -361,6 +444,8 @@ hf = torch.sqrt((res**2).mean(dim=-1))  # [J, 16]
 rz = rootz[h]
 fell_full = int(((rootz < 0.05217) | ~torch.isfinite(rootz)).any(dim=0).sum())
 res_out = {
+  "replay": args.replay, "forward_speed_mean": float(forward_speed.mean()), "forward_speed_min": float(forward_speed.min()),
+  "recorded_forward_speed": REPLAY["rec_speed"] if REPLAY is not None else None,
   "motion": args.motion, "full_gap_mean": float(q_all.mean()), "full_gap_p95": pct(q_all, 0.95),
   "full_gap_p99": pct(q_all, 0.99), "full_gap_max": float(q_all.max()), "rootz_min": float(torch.nan_to_num(rootz, nan=0.0).min()),
   "fell_or_nan_envs_fullrun": fell_full,

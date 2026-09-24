@@ -232,6 +232,8 @@ def main():
   ap.add_argument("--no-frictionloss", action="store_true")
   ap.add_argument("--motion", choices=("stand", "trot", "drop"), default="stand")
   ap.add_argument("--drop-height", type=float, default=0.010)
+  ap.add_argument("--replay", type=str, default="", help="npz from cpg_rl/openloop_spine_cpg.py; replays s_target open-loop")
+  ap.add_argument("--replay-robot", type=int, default=0)
   ap.add_argument("--json", type=str, default="")
   ap.add_argument("--export-model", type=str, default="")
   args = ap.parse_args()
@@ -250,6 +252,29 @@ def main():
   if args.motion == "drop":
     d.qpos[2] += args.drop_height
     mujoco.mj_forward(m, d)
+  replay = None
+  if args.replay:
+    Z = np.load(args.replay)
+    assert tuple(Z["motor_names"][:8]) == MOTORS
+    i = args.replay_robot
+    replay = Z["s_target"][:, i, :8]
+    kin = KIN.MicrotaurFiveBarKinematics()
+    for leg in range(4):
+      full = kin.forward_numpy(Z["s_q"][0, i, 2 * leg], Z["s_q"][0, i, 2 * leg + 1], leg_index=leg + 1).full
+      for jn, q in zip(FULL[4 * leg:4 * leg + 4], full):
+        d.qpos[m.joint(jn).qposadr[0]] = q
+    gx, gy, gz = Z["s_imu_gravity"][0, i]
+    pitch, roll = math.asin(max(-1.0, min(1.0, float(gx)))), math.atan2(-float(gy), -float(gz))
+    cr, sr, cp, sp = math.cos(roll / 2), math.sin(roll / 2), math.cos(pitch / 2), math.sin(pitch / 2)
+    d.qpos[0:3] = (0.0, 0.0, float(Z["s_truth_pos"][0, i, 2]))
+    d.qpos[3:7] = (cr * cp, sr * cp, cr * sp, -sr * sp)
+    d.qvel[0:3] = Z["s_truth_vel_b"][0, i]  # MuJoCo free-joint linear velocity is world frame; yaw = 0 so ~body
+    d.qvel[3:6] = Z["s_imu_gyro"][0, i]     # free-joint angular velocity is body frame
+    mujoco.mj_forward(m, d)
+    args.seconds = replay.shape[0] * float(Z["dt"])
+    rec_speed = float(Z["m_forward_m_s"][i])
+    print(f"replay {args.replay} robot {i}: {replay.shape[0]} frames, recorded forward {rec_speed:.4f} m/s")
+  start = d.qpos[0:7].copy()
 
   print(f"mujoco {mujoco.__version__}  timestep {m.opt.timestep}  iterations {m.opt.iterations}"
         f"  ls_iterations {m.opt.ls_iterations}  cone {m.opt.cone}  solver {m.opt.solver}  kd {args.kd}")
@@ -262,6 +287,7 @@ def main():
   print(f"nominal root z (code formula) {nominal_root_z:.5f} m")
 
   n = int(round(args.seconds / m.opt.timestep))
+  decim = int(round(0.02 / m.opt.timestep))
   gaps = np.zeros((n, len(pairs)))
   q_hist = np.zeros((n, 16))
   root = np.zeros((n, 7))
@@ -270,8 +296,11 @@ def main():
     q = d.qpos[motor_qadr]
     qd = d.qvel[motor_dadr]
     d.qfrc_applied[:] = 0.0
-    if t % 4 == 0:  # targets update at the 50 Hz control rate (decimation 4)
-      tgt = target + motion_delta(t * m.opt.timestep, args.motion)
+    if t % decim == 0:  # targets update at the 50 Hz control rate
+      if replay is not None:
+        tgt = replay[min(t // decim, replay.shape[0] - 1)]
+      else:
+        tgt = target + motion_delta(t * m.opt.timestep, args.motion)
     d.qfrc_applied[motor_dadr] = dc_motor_torque(tgt - q, qd, args.kd)
     mujoco.mj_step(m, d)
     for k, (_, s1, s2) in enumerate(pairs):
@@ -300,6 +329,12 @@ def main():
   print("closing-site gaps (settled), metres:")
   for k, (nme, _, _) in enumerate(pairs):
     print(f"  {nme:26s} mean {g[:,k].mean():.3e}  p95 {np.percentile(g[:,k],95):.3e}  max {g[:,k].max():.3e}")
+  w0, x0, y0, z0 = start[3:7]
+  fwd0 = np.array([1 - 2 * (y0 * y0 + z0 * z0), 2 * (x0 * y0 + w0 * z0), 0.0])
+  fwd0 /= np.linalg.norm(fwd0)
+  fwd_speed = float(np.dot(root[-1, 0:3] - start[0:3], fwd0) / args.seconds)
+  fell = bool((root[:, 2] < 0.05217).any())
+  print(f"forward speed along initial heading {fwd_speed:.4f} m/s  fell {fell}")
   print(f"motion {args.motion}  FULL RUN: mean {gaps.mean():.3e}  p95 {np.percentile(gaps,95):.3e}  p99 {np.percentile(gaps,99):.3e}  max {gaps.max():.3e}"
         f"  root z min {root[:,2].min():.5f}")
   print(f"ALL pairs: mean {g.mean():.3e}  p95 {np.percentile(g,95):.3e}  max {g.max():.3e}  (full-run max {gaps.max():.3e})")
@@ -327,7 +362,7 @@ def main():
       "total_mass": float(m.body_mass.sum()),
       "root_z_mean": float(root[s, 2].mean()),
       "gap_mean": float(g.mean()), "gap_p95": float(np.percentile(g, 95)), "gap_max": float(g.max()),
-      "hf_rms_max": float(hf.max()), "motion": args.motion,
+      "hf_rms_max": float(hf.max()), "motion": args.motion, "forward_speed": fwd_speed, "fell": fell,
       "full_gap_mean": float(gaps.mean()), "full_gap_p95": float(np.percentile(gaps, 95)),
       "full_gap_p99": float(np.percentile(gaps, 99)), "full_gap_max": float(gaps.max()), "q_mean": q_hist[s].mean(0).tolist(), "joint_names": list(FULL),
       "stand_full_q": full_q.tolist(), "nominal_root_z": nominal_root_z,
