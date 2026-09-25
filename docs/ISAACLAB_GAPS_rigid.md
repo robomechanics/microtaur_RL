@@ -2,8 +2,24 @@
 
 2026-09-23 · branch `spine-study-isaac` · **scope: `rigid_microtaur` only**
 
-Every fact below was checked against the files in this repository on 2026-09-23.
-Line references are to `Microtaur_RL-main/`.
+Every fact below was checked against the files on 2026-09-23, and corrected
+against the newer upstream tree on 2026-09-25. Line references are to
+`Microtaur_RL-main/` unless stated otherwise.
+
+⚠ **This repository's own rigid configuration is the old one.** Its
+`env_cfgs.py` is `ENV_CFG_REVISION = "2026-09-05-rigid-aligned-baseline-v1"`
+(2291 lines) and its `robot_modified.xml` is the 72,002-byte version with the
+pre-correction mass model. The configuration to port is in
+`github.com/aryan-chandra-cmu/Microtaur_RL`, whose `main` is at **`5880025`**
+("rigid sim2real hardware char and stand pos", 09-21):
+`src/microtaur_velocity/env_cfgs.py`, 2529 lines,
+`ENV_CFG_REVISION = "2026-09-20-rigid-hw-calibrated-sim2real-v3-observation-fix"`.
+Relative to `eef9f92` that commit only relocates files under `src/` and
+`microtaur_xmls/` — env and model are identical — and adds a 799-line
+`sim2real/README.md` plus hardware-characterisation scripts, among them
+`quantify_closure_error_test25.py`, which by its name measures closure error and
+may already contain a hardware criterion for §0. That repository is read-only:
+`log` / `diff` / `show` only, no commits, pushes or branch checkouts.
 
 Scope note: this covers the rigid variant only. The three spine variants
 (`active_twist`, `active_pitch`, `active_yaw`) add a spine action term, spine
@@ -56,6 +72,59 @@ drift and jitter at the real scale and the real environment count. If that does
 not hold up, everything downstream changes, and finding out first is much
 cheaper than finding out after porting the reward function.
 
+### 0b. Spike result, 2026-09-25 — feasible, at a solver cost
+
+The spike was run. Loop closure in PhysX **does** hold up, but only with
+
+- **`pos_iters = 16`**, and
+- **`dt = 0.0025 s`** — half MuJoCo's 0.005 s
+
+so the physics cost per simulated second is at least double, before counting the
+extra position iterations. That belongs in the compute budget: the throughput
+number to plan against is the one measured under these settings, not a default.
+
+Also established:
+
+- Standing at zero action gives root z = **0.06706 m**, matching the MuJoCo
+  reference. The conversion is faithful at least in the static pose.
+- The model the spike used differs from the 09-20 XML by at most **5e-9 m**, so
+  its stand / trot / drop conclusions carry over to the new model unchanged.
+- **`frictionloss` still has no PhysX mapping.** It is 1.0e-2 N·m on the actuated
+  joints and 1.0e-3 on the passive ones, and it is not a rounding detail on a
+  0.129 N·m effort limit — 1.0e-2 is 7.8% of it.
+- Contact-model differences between the two engines still need calibrating, and
+  the contact sensor still has to be rewritten (§3).
+- The environment builds and runs: actor 33-dim, critic 60-dim, total mass
+  0.540 kg — after working around the reset bug below.
+
+⚠ **Open: the spike used `kd = 0.045`, but the 09-20 configuration sets
+`kd = 0`.** With less joint damping the loop-closure constraint spikes and the
+jitter can both grow, so stand / trot / drop need re-running at `kd = 0` before
+the feasibility verdict is final. This is the next thing to do.
+
+⚠ **`quantify_closure_error_test25.py`**, added to the upstream tree in `5880025`
+alongside a 799-line `sim2real/README.md`, may already contain a *hardware*
+measurement of closure error. If it does, it supplies the acceptance threshold
+this section currently lacks — read it before choosing one.
+
+### 0c. The reset bug is in the upstream tree too
+
+`microtaur_ik_consistent_reset` calls `set_joint_position_target` with
+pre-expanded indices, which mjlab >= 1.6 rejects:
+
+```
+RuntimeError: shape mismatch: value tensor of shape [N, 1]
+cannot be broadcast to indexing result of shape [N, 1, 1]
+```
+
+Upstream has **not** fixed this. The fix is two `.unsqueeze()` calls removed, and
+it is already written in this repository's per-variant run snapshots:
+
+> *"MJLab >= 1.6 outer-indexes 1-D env and joint IDs internally, so pass them
+> unexpanded; pre-expanding them to [N, 1] and [1, 8] breaks broadcasting."*
+
+Until it is fixed, anything that builds an environment needs a runtime shim.
+
 ---
 
 ## 1. Assets — nothing exists yet
@@ -83,26 +152,75 @@ direct MJCF import if the Isaac Sim version on the machine has one, and then
 verify the result rather than trusting it — mass, inertia, joint axes, joint
 limits and the collision/visual split all need checking against the MJCF.
 
-**(b) 56 lines of Python spec-patching must be relocated.** IsaacLab has no
-config-time model mutation, so these have to be baked into the USD or expressed
-as `ArticulationCfg` properties:
+**(b) Only ONE model change has to be relocated: the actuated joint range.**
 
-| target | field | value |
+> Corrected 2026-09-25. An earlier version of this section listed armature,
+> frictionloss, damping, mass, COM and inertia as Python-side patches that had to
+> be moved. That was wrong, and checking the XML settles it.
+
+The XML already carries all of those per joint:
+
+```xml
+<joint name="leg1_a_joint_act" limited="true" range="-0.500000 1.400000"
+       frictionloss="0.010" armature="0.0002" damping="0"/>
+<joint name="leg1_b_joint"    frictionloss="0.001" armature="0.000001" damping="0.0001"/>
+```
+
+`_make_xml_validated_spec` re-sets armature / frictionloss / damping to exactly
+the values the XML already has, so for those fields it is a **no-op**. Verified by
+reading the compiled model with `mujoco`: actuated joints are armature 2e-4,
+frictionloss 1.0e-2, damping 0; passive joints are 1e-6, 1.0e-3, 1e-4.
+
+| target | field | XML has | Python sets | net effect |
+|---|---|---|---|---|
+| 8 × `*_joint_act` | `range` | ±0.95 rad about stand (`-0.5 … 1.4`, mirrored by side) | stand ± **0.75 rad** → `-0.3 … 1.2` | **narrowed — the only real change** |
+| 8 × `*_joint_act` | `armature` / `frictionloss` / `damping` | 2e-4 / 1.0e-2 / 0 | the same | no-op |
+| 8 × `leg{1-4}_{b,d}_joint` | `armature` / `frictionloss` / `damping` | 1e-6 / 1.0e-3 / 1e-4 | the same | no-op |
+| body `battery` | mass / COM / inertia | **already the hardware-corrected values** | the same | no-op on this XML |
+
+Two things worth noticing in that table:
+
+- **The XML's own range is ±0.95 rad about the stand pose.** So
+  `MICROTAUR_JOINT_HALF_RANGE_RAD = 0.95`, which is what the *pitch* variant uses,
+  means "do not narrow the mechanical range at all". Rigid, roll and yaw narrow it
+  to ±0.75. That is a cleaner reading of the per-variant difference than treating
+  pitch as an outlier.
+- **The mass patch is a no-op only on the new XML.** The 09-20 XML already contains
+  the hardware-corrected root inertial, so the port needs no mass work at all.
+  On the older 09-05 XML the same patch is load-bearing — see §1c.
+
+What is *not* in the XML: the entire actuator model (kp, kd, effort and velocity
+limits) — there are **zero `<actuator>` elements**, so a converter reading the XML
+alone produces a robot with no actuators. See §4.
+
+## 1c. Which XML, and the mass difference
+
+The new and old rigid XMLs differ by **exactly one line**, the root `<inertial>`
+of the `battery` body:
+
+| | old (09-05) | **new (09-20)** |
 |---|---|---|
-| 8 × `leg{1-4}_{a,e}_joint_act` | `limited` | true |
-| 8 × actuated | `range` | stand ± **0.75 rad** (`MICROTAUR_JOINT_HALF_RANGE_RAD`) |
-| 8 × actuated | `armature` | **2e-4** |
-| 8 × actuated | `frictionloss` | **0.010** N·m |
-| 8 × `leg{1-4}_{b,d}_joint` (passive) | `armature` | **1e-6** |
-| 8 × passive | `frictionloss` | **0.001** N·m |
-| 8 × passive | `damping` | **1e-4** |
-| body `battery` | `mass` | **0.4662146611** kg |
-| body `battery` | COM (`ipos`) | **(−8.161907e-4, −7.185340e-4, 1.301072e-2)** m |
-| body `battery` | inertia | scaled by the mass ratio |
+| file size | 72,002 B | **72,099 B** |
+| **total model mass** | 0.465334 kg | **0.540000 kg** |
+| root (`battery`) mass | 0.391549 kg | **0.466215 kg** |
+| root COM x | **+0.0196 m** | **−0.0008 m** |
+| root COM y | +7.0e-07 | −7.2e-04 |
+| `fullinertia` | — | scaled by **1.1907×** |
+| `neq` (loop closures) | 8 | 8 — unchanged |
 
-Note the mass number is the *simulation* value; the **measured** robot is
-**0.540 kg** with a 52.99 / 47.01% fore/aft split. Reconciling those is a
-separate open item, not a port item.
+Both numbers are from loading each file with `mujoco` and summing `body_mass`, not
+from the comments. The new total, **0.540000 kg, is exactly the measured robot
+mass**, so that is the acceptance criterion for the USD conversion; the old one is
+13.8% light.
+
+The COM shift along x is **20.4 mm**, against a 170 mm fore-aft foot spacing — 12%
+of the body length. It changes the static load distribution, and it is the change
+that matches the measured 52.99 / 47.01% fore/aft support split. The old model was
+markedly nose-heavy.
+
+⚠ `microtaur_xmls/rigid_microtaur/robot_modified_rigid_sim2real.xml` is
+**byte-identical** to `robot_modified.xml` in the new tree. It is a copy, not a
+second variant; do not convert both.
 
 ---
 
