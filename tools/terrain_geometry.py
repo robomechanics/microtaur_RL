@@ -41,10 +41,13 @@ BODY_WIDTH_M = 0.105
 NOMINAL_ROOT_HEIGHT_M = 0.07017281465145506
 MIN_ROOT_HEIGHT_M = NOMINAL_ROOT_HEIGHT_M - 0.018
 
-# Usable single-joint travel is +/- 0.75 rad about the stand pose, which at this
-# link geometry is worth roughly 25 mm of foot height travel per leg. Terrain
-# amplitude is expressed as a fraction of that so the difficulty scale means
-# something mechanical rather than just "millimetres".
+# A round reference scale for expressing terrain amplitude as a fraction of what
+# the legs can absorb, rather than as bare millimetres.
+#
+# The precise budget, computed in LEG_RETRACT_BUDGET_M / LEG_EXTEND_BUDGET_M
+# below, is 26.22 mm of retraction and 32.86 mm of extension at mid-stance, i.e.
+# 59.08 mm total -- so this 25 mm is deliberately conservative and happens to sit
+# just under the retract figure, which is the one that binds for terrain height.
 LEG_VERTICAL_TRAVEL_M = 0.025
 
 
@@ -224,6 +227,111 @@ def alternating_lateral_steps(
   return _zero_mean(z)
 
 
+# ---------------------------------------------------------------------------
+# The two study terrains (B and C). See docs/TERRAIN_DESIGN.md for the ladders
+# and for where the amplitude ceilings come from.
+# ---------------------------------------------------------------------------
+
+# Usable vertical foot travel, computed from microtaur_kinematics.py at the rigid
+# stand pose under the coupled joint limits (|common|,|diff| <= 0.52,
+# |common|+|diff| <= 0.70, single joint stand +/- 0.75):
+#
+#   |common|   diff lim   retract    extend
+#     0.00       0.52     26.22 mm   32.86 mm
+#     0.30       0.40     24.06      22.30
+#     0.50       0.20     18.13       4.69
+#
+# RETRACT is the binding limit for terrain height, because a foot standing on a
+# cell `h` higher must shorten that leg by `h`. It is also the robust one --
+# extend collapses as the leg swings, retract barely moves.
+LEG_RETRACT_BUDGET_M = 0.0262
+LEG_EXTEND_BUDGET_M = 0.0329
+
+# Difficulty ladders. Level 0 is flat, so a curriculum can start on known ground.
+BLOCK_GRID_AMPLITUDE_M = (0.000, 0.006, 0.012, 0.018, 0.024)   # peak-to-peak
+LATERAL_OFFSET_M = (0.000, 0.004, 0.008, 0.012, 0.014)         # left minus right
+
+
+def block_grid(
+  nx: int,
+  ny: int,
+  dx: float,
+  *,
+  difficulty: float,
+  cell_m: float = 0.070,
+  amplitude_m: float | None = None,
+  rng: np.random.Generator | None = None,
+) -> np.ndarray:
+  """Terrain B: flat-topped square cells of uniform edge, i.i.d. random heights.
+
+  Sample the heightfield finer than the cell (``dx`` << ``cell_m``) and the tops
+  come out genuinely flat: with 70 mm cells at dx = 10 mm, 7x7 = 49 samples per
+  cell share a height, 6 of every 7 sample intervals per axis are flat, and the
+  transition between cells spans one 10 mm interval -- atan(24/10) = 67 degrees,
+  effectively a wall. Sampling at dx = cell_m instead gives **no flat tops at
+  all**, only 19-degree ramps everywhere, which is a different terrain: a slope
+  applies a tangential force for the whole stance, where a cell edge is a
+  one-or-two-timestep perturbation a quadruped recovers from by stepping again.
+
+  ``cell_m`` is not a sensitive parameter. Measured, the twist/curvature ratio is
+  0.74-1.13 over cell sizes from 20 to 250 mm -- i.i.d. heights have no
+  directional structure, so the field is axis-neutral whatever shape the cells
+  are, and cell size sets only the magnitude. The lower bound that matters is the
+  6.2 mm foot radius: below about 40 mm, feet land on edges often enough that the
+  edge contact stops being transient.
+  """
+  rng = np.random.default_rng() if rng is None else rng
+  amp = (
+    float(difficulty) * BLOCK_GRID_AMPLITUDE_M[-1]
+    if amplitude_m is None
+    else float(amplitude_m)
+  )
+  c = max(int(round(float(cell_m) / dx)), 1)
+  gx, gy = -(-nx // c), -(-ny // c)  # ceil
+  h = rng.uniform(-amp / 2.0, amp / 2.0, size=(gx, gy))
+  z = np.kron(h, np.ones((c, c)))[:nx, :ny]
+  return _zero_mean(z)
+
+
+def lateral_offset(
+  nx: int,
+  ny: int,
+  dx: float,
+  *,
+  difficulty: float,
+  delta_m: float | None = None,
+  ramp_m: float = 0.0,
+) -> np.ndarray:
+  """Terrain C: left half of the path high, right half low, sustained.
+
+  The study's **negative control**. Every spine in this project rotates the front
+  trunk half relative to the rear half, so none of the three axes can help with a
+  sustained left-right height difference -- a rigid trunk handles it by rolling as
+  a whole, or by standing taller on one side. Measured content (twist, curvature):
+
+    step, spawned on it      0.0000, 0.0000
+    ramped over 1 body len   0.0071, 0.0061
+    ramped over 5 body len   0.0050, 0.0012
+
+  against terrain B's 0.13 / 0.14. Even the worst case is 5% of B, so the entry
+  transient is negligible and ``ramp_m`` does not need care.
+
+  Run this straight-ahead only: a yaw command steers the robot off the seam and
+  turns a sustained roll demand into an intermittent one.
+  """
+  amp = (
+    float(difficulty) * LATERAL_OFFSET_M[-1] if delta_m is None else float(delta_m)
+  )
+  y = np.arange(ny) - (ny - 1) / 2.0
+  s = np.sign(y)
+  s[s == 0] = 1.0
+  z = np.tile(0.5 * amp * s, (nx, 1))
+  if ramp_m > 0:
+    n = max(int(round(float(ramp_m) / dx)), 1)
+    z = z * np.clip(np.arange(nx) / n, 0.0, 1.0)[:, None]
+  return _zero_mean(z)
+
+
 def make_map_set(
   n_maps: int,
   nx: int,
@@ -296,6 +404,25 @@ if __name__ == "__main__":
       f"step={(z.max() - z.min()) * 1e3:5.2f} mm"
     )
 
+  print()
+  print("terrain B (block grid, 70 mm cells, dx = 10 mm):")
+  print(f"  {'level':>5s} {'A p2p':>8s} {'p95 adj step':>13s} {'% of retract':>13s}")
+  for lvl, a in enumerate(BLOCK_GRID_AMPLITUDE_M):
+    z = block_grid(NX, NY, DX, difficulty=0.0, amplitude_m=a,
+                   rng=np.random.default_rng(0))
+    d = np.abs(np.diff(z, axis=0))
+    p95 = float(np.percentile(d[d > 0], 95)) if (d > 0).any() else 0.0
+    print(f"  {lvl:5d} {a * 1e3:7.1f}mm {p95 * 1e3:12.1f}mm "
+          f"{100 * a / LEG_RETRACT_BUDGET_M:12.0f}%")
+
+  print()
+  print("terrain C (lateral offset):")
+  print(f"  {'level':>5s} {'delta':>8s} {'per leg':>9s} {'% of retract':>13s}")
+  for lvl, d0 in enumerate(LATERAL_OFFSET_M):
+    print(f"  {lvl:5d} {d0 * 1e3:7.1f}mm {d0 * 1e3 / 2:8.1f}mm "
+          f"{100 * (d0 / 2) / LEG_RETRACT_BUDGET_M:12.0f}%")
+
+  print()
   maps = make_map_set(5, NX, NY, DX, difficulty=0.6, seed=1)
   print(f"map set: {len(maps)} maps, "
         f"wavelengths {[round(m['wavelength_m'], 3) for m in maps]}")
