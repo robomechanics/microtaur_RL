@@ -1,0 +1,16 @@
+[project]
+name = "microtaur_rigid"
+version = "0.1.0"
+description = "Rigid Microtaur velocity task for mjlab (spine study)"
+requires-python = ">=3.10,<3.14"
+dependencies = ["mjlab==1.6.0", "numpy", "torch"]
+
+[build-system]
+requires = ["uv_build>=0.8.18,<0.9.0"]
+build-backend = "uv_build"
+
+[project.entry-points."mjlab.tasks"]
+microtaur_rigid = "microtaur_rigid"
+
+[tool.ruff]
+indent-width = 2
