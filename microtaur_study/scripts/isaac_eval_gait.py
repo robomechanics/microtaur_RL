@@ -8,7 +8,9 @@ randomisation, no episode timeout). The command is pinned every step: forward
 speed v, no lateral, yaw rate w (0 for --speeds, given for --turns "v:w"). 2 s settle, 6 s measured. Same statistics as
 scripts/eval_gait.py (mjlab): tracking, duty factor, stride frequency, phase vs
 leg 1 -> trot / pace / bound, swing clearance, body height and roll/pitch,
-motor travel, torque saturation, target-vs-actual error, power and CoT.
+motor travel, torque saturation, target-vs-actual error, power and CoT; and per
+leg, from the five-bar FK: extension (leg length std), swing (angle std as arc
+length), mean leg angle, and swing retraction (stance minus swing mean length).
 
 Writes summary.json, gait_<v>.png (contact diagram, leg-1 motor traces, foot
 heights of the first env at each speed) and traj_<v>.npz (root pose and all
@@ -60,6 +62,7 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper  # noqa: E402
 from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 
 from microtaur_common.gait_analysis import LEGS, classify, onset_phases  # noqa: E402
+from microtaur_common.kinematics import MicrotaurFiveBarKinematics  # noqa: E402
 from microtaur_common.robot_constants import (  # noqa: E402
   EFFORT_LIMIT_NM, EXPECTED_TOTAL_MASS_KG, JOINT_HALF_RANGE_RAD, LEG_JOINT_NAMES, STAND_A, STAND_E,
   XL330_COPPER_W_PER_NM2,
@@ -145,6 +148,28 @@ TR = {k: torch.stack(v).cpu().numpy() for k, v in traj.items()}  # [T, S, ...]
 joint_names = list(robot.joint_names)
 
 stand = np.empty(8); stand[0::2] = STAND_A; stand[1::2] = STAND_E
+KIN = MicrotaurFiveBarKinematics()
+FK_ENVS = 4  # per command, for the leg-space statistics
+
+
+def leg_space(q, contact):
+  """Five-bar FK of each leg from its two motor angles (leg plane, origin between
+  the motor pivots): leg length r (extension) and angle from vertical (swing).
+  q [T, E, 8] canonical order, contact [T, E, 4]."""
+  out = {"r_std_mm": [], "arc_std_mm": [], "angle_mean_deg": [], "r_range_mm": [], "angle_range_deg": [],
+         "swing_retraction_mm": []}
+  for k in range(4):
+    F = np.array([[(s.foot_x, s.foot_z) for s in (KIN.forward_numpy(a, e, k + 1) for a, e in zip(qa, qe))]
+                  for qa, qe in zip(q[:, :, 2 * k].T, q[:, :, 2 * k + 1].T)])  # [E, T, 2]
+    r = np.hypot(F[..., 0], F[..., 1]); th = np.arctan2(F[..., 0], -F[..., 1])
+    c = contact[:, :, k].T
+    out["r_std_mm"].append(round(float(1e3 * r.std(axis=1).mean()), 2))
+    out["arc_std_mm"].append(round(float(1e3 * (th.std(axis=1) * r.mean(axis=1)).mean()), 2))
+    out["angle_mean_deg"].append(round(float(np.degrees(th.mean())), 1))
+    out["r_range_mm"].append(round(float(1e3 * np.ptp(r, axis=1).mean()), 1))
+    out["angle_range_deg"].append(round(float(np.degrees(np.ptp(th, axis=1)).mean()), 1))
+    out["swing_retraction_mm"].append(round(float(1e3 * (r[c].mean() - r[~c].mean())), 2) if (~c).any() and c.any() else None)
+  return out
 summary = {"checkpoint": args.checkpoint, "policy_dt_s": dt, "commands": {}}
 for si, ((v, w), label) in enumerate(zip(CMDS, LABELS)):
   sl = slice(si * K, (si + 1) * K)
@@ -180,6 +205,7 @@ for si, ((v, w), label) in enumerate(zip(CMDS, LABELS)):
     "torque_rms_nm": float(np.sqrt((r["tau"] ** 2).mean())),
     "power_mech_w": float(r["mech"].mean()), "power_copper_w": float(r["copper"].mean()),
     "electrical_cot": float(power / (EXPECTED_TOTAL_MASS_KG * 9.81 * max(vx, 1e-3))),
+    "leg_space": leg_space(r["q"][:, :FK_ENVS], r["contact"][:, :FK_ENVS]),
   }
   summary["commands"][label] = s
   log(f"\n=== cmd {v:.2f} m/s, yaw {w:+.2f} rad/s")

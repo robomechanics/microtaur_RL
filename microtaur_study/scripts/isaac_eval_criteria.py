@@ -49,4 +49,9 @@ for r in rows:
   yaw = "" if r["yaw_ratio"] is None else f"{r['yaw_ratio']:.3f}"
   print(f"{r['command']:14s} {'PASS' if r['ok'] else 'FAIL':4s} {r['speed_ratio']:8.3f} {yaw:>8s} "
         f"{r['stride_hz']:7.2f} {min(r['clearance_mm']):14.1f}  {r['gait']} / {','.join(failed) or '-'}")
+print("\nleg space (five-bar FK, legs RR RL FL FR): extension std / swing arc std / swing retraction, mm; mean angle deg")
+for label, s in summary["commands"].items():
+  ls = s.get("leg_space")
+  if ls:
+    print(f"{label:14s} ext {ls['r_std_mm']}  arc {ls['arc_std_mm']}  retract {ls['swing_retraction_mm']}  angle {ls['angle_mean_deg']}")
 print("ALL PASS" if all_ok else "NOT PASSED")
