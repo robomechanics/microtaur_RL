@@ -10,11 +10,10 @@
 Difficulty d in [0, 1] scales the heights of the same pattern linearly, so a
 terrain level is "the same map, taller".
 
-Ceiling: 50% of the leg's vertical travel in each direction, +13.1 mm up and
--16.4 mm down, measured at the stand pose (common = 0). ⚠ The recorded rigid
-gait keeps the feet behind the hip (common +0.26 at touchdown, +0.38 at
-liftoff), where the travel is smaller -- 50% there is +10.8 / -7.6 mm -- so the
-top levels are harder than their stand-pose percentage suggests.
+Ceiling: 50% of the leg's vertical travel in the stance pose, +10.8 mm up and
+-7.6 mm down (see UP_MAX_M / DOWN_MAX_M). Numbers come from the 2026-09 rigid RL
+gait (0.465 kg model; the leg kinematics are the same), so recheck them once
+the new policy's stance is known.
 
 Axes: x (axis 0) is the direction of travel, y (axis 1) lateral (+y = left),
 heights in metres. B is zero-mean; C starts and ends on z = 0.
@@ -31,9 +30,13 @@ import numpy as np
 # and the ramp is narrower than the 6.2 mm foot radius.
 DX_M = 0.0025
 CELL_M = 0.070
-UP_MAX_M = 0.0131  # 50% of retract (26.22 mm) at the stand pose
-DOWN_MAX_M = 0.0164  # 50% of extend (32.86 mm) at the stand pose
-SIGMA_M = UP_MAX_M / 2.0  # clip at 2 sigma on the tighter (up) side
+# Ceiling: 50% of the leg's vertical travel in the stance pose, not the stand
+# pose. The recorded rigid gait keeps the feet behind the hip; the tightest
+# point of stance is liftoff (common +0.38), where retract is 21.6 mm and
+# extend 15.2 mm. (At the stand pose they are 26.2 / 32.9 mm.)
+UP_MAX_M = 0.0108  # 50% of 21.6 mm retract at liftoff
+DOWN_MAX_M = 0.0076  # 50% of 15.2 mm extend at liftoff
+SIGMA_M = DOWN_MAX_M / 2.0  # clip at 2 sigma on the tighter (down) side
 
 
 def _zero_mean(z: np.ndarray) -> np.ndarray:
@@ -62,9 +65,9 @@ def flat_step_flat(nx: int, ny: int, *, difficulty: float, dx: float = DX_M,
   """Terrain C. Low flat approach, left half raised for most of the course, low flat exit.
 
   Everything is at z = 0 except the left half (y > 0) of the step section,
-  which is raised by difficulty * delta_m. At 100% delta = 29.5 mm: with the
-  body lowered, the left legs retract ~13.1 mm and the right legs extend
-  ~16.4 mm, i.e. 50% of each at the stand pose. The step section is most of the
+  which is raised by difficulty * delta_m. At 100% delta = 18.4 mm: with the
+  body lowered, the left legs retract ~10.8 mm and the right legs extend
+  ~7.6 mm, i.e. 50% of each at the tightest point of stance. The step section is most of the
   course (4 m of 5 m), because the sustained offset is what C is for.
 
   Not zero-meaned: approach and exit must stay on the base level, and a course

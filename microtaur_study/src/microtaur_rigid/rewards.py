@@ -71,7 +71,9 @@ STEPS_PER_ITER = 32  # rl_cfg num_steps_per_env; common_step_counter counts thes
 WEIGHTS = {
   "track_lin_vel_xy": 1.0,
   "track_ang_vel_z": 0.5,
-  "motor_energy": -0.025,
+  # Off for now: get a good gait first, then reintroduce energy (the sweep of
+  # 2026-09-25 showed 0.005-0.018 all keep walking with the curriculum).
+  "motor_energy": 0.0,
   "action_rate": -0.05 / 8,
   # mjlab multiplies by step_dt (0.02 s): -100 * 0.02 = -2.0 per termination.
   "termination": -100.0,

@@ -23,11 +23,12 @@ from .terminations import configure_terminations
 from .terrain import MICRO_ROUGH_TERRAINS_CFG
 
 PHYSICS_DT_S = 0.005
-# 4 x 5 ms = 50 Hz. This is the rate every 2026-09 policy actually trained at
-# (upstream's 30 Hz override never ran: it tested for a non-existent cfg.sim.dt).
-# The hardware loop runs at ~30 Hz; changing this is a deliberate decision,
-# not a bug fix, so it is set explicitly here.
-DECIMATION = 4
+# 7 x 5 ms = 35 ms = 28.6 Hz, the policy period the hardware characterisation
+# chose (Test 09: 25-33 Hz reliable, 40 Hz not deterministic) and that the
+# one-step action delay and 0.10 s filter horizon were tuned for. Every 2026-09
+# policy before this trained at 50 Hz: upstream's 30 Hz override tested for a
+# non-existent cfg.sim.dt and never ran.
+DECIMATION = 7
 
 
 def make_env_cfg(

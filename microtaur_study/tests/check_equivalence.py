@@ -13,7 +13,9 @@ differences). So equivalence is checked in two ways instead of by trajectory:
   B. Statistical: upstream-vs-refactor differences in rollout statistics must be
      no larger than upstream-vs-upstream (run-to-run noise).
 
-Rewards are not compared: D0 replaces the upstream reward on purpose.
+Rewards are not compared: D0 replaces the upstream reward on purpose. The
+control rate (28.6 Hz here, 50 Hz upstream) and the command schedule are also
+deliberate departures; refactor_cfg() reverts both for the comparison.
 
 Usage (mjlab 1.6 venv):
   python tests/check_equivalence.py --upstream-src /path/to/microtaur_upstream/src
@@ -55,11 +57,22 @@ def _flat_ids(self, position, joint_ids=None, env_ids=None):
 
 Entity.set_joint_position_target = _flat_ids
 
-from microtaur_rigid.env_cfg import make_env_cfg  # noqa: E402
+from microtaur_rigid.env_cfg import make_env_cfg  # noqa: E402  (used by refactor_cfg)
 from microtaur_velocity import env_cfgs as upstream  # noqa: E402
 
 DEV = "cuda:0"
 ok = True
+
+
+def refactor_cfg():
+  """This package's cfg with the two deliberate departures undone for comparison:
+  upstream's control rate (decimation 4 = 50 Hz) and upstream's command schedule."""
+  from microtaur_rigid.commands import _apply_stage
+  cfg = make_env_cfg()
+  cfg.decimation = 4
+  cfg.curriculum["command_ranges"].params["stages"] = upstream.COMMAND_STAGES
+  _apply_stage(cfg.commands["twist"], upstream.COMMAND_STAGES[0])
+  return cfg
 
 
 def build(cfg, n):
@@ -79,7 +92,7 @@ def report(name, diff, tol=0.0):
 # --- A1: state after reset ----------------------------------------------------
 print("A1. state after reset (16 envs, same seed)")
 states = []
-for cfg in (upstream.microtaur_velocity_flat_env_cfg(), make_env_cfg()):
+for cfg in (upstream.microtaur_velocity_flat_env_cfg(), refactor_cfg()):
   env = build(cfg, 16)
   obs, _ = env.reset()
   r = env.scene["robot"].data
@@ -90,7 +103,7 @@ for k, name in enumerate(("actor obs", "critic obs", "joint_pos", "root pose")):
 
 # --- A2: action term on one env -------------------------------------------------
 print("A2. action term, upstream vs refactor on the same env (16 envs, 300 steps)")
-env = build(make_env_cfg(), 16)
+env = build(refactor_cfg(), 16)
 env.reset()
 mine = env.action_manager.get_term("joint_pos")
 theirs = upstream.microtaur_velocity_flat_env_cfg().actions["joint_pos"].build(env)
@@ -148,7 +161,7 @@ def stats(cfg):
 
 u1 = stats(upstream.microtaur_velocity_flat_env_cfg())
 u2 = stats(upstream.microtaur_velocity_flat_env_cfg())
-m1 = stats(make_env_cfg())
+m1 = stats(refactor_cfg())
 for k in u1:
   noise, delta = abs(u1[k] - u2[k]), abs(u1[k] - m1[k])
   print(f"  {k:16s} upstream {u1[k]:9.4f} / {u2[k]:9.4f}  refactor {m1[k]:9.4f}   "

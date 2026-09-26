@@ -6,8 +6,9 @@
      raw simulator state, evaluated on the same state. (The reward manager
      itself sees body-derived quantities one physics substep stale -- mjlab
      calls forward() only before observations -- so its values cannot be
-     matched against post-step state; the manager is checked only on the
-     qvel-level terms, where that staleness does not apply.)
+     matched against post-step state; the manager is instead checked against
+     the value each term returned inside the manager, which tests the weight
+     scaling exactly.)
   3. Prints the magnitude of every term for a standing robot and a random-action
      robot, so the weights can be judged.
 
@@ -37,7 +38,23 @@ cfg.seed = 0
 # reset; remove it and pin the final weight so the manager check below has a
 # nonzero weight to divide by.
 cfg.curriculum.pop("energy_weight")
-cfg.rewards["motor_energy"].weight = R.WEIGHTS["motor_energy"]
+TEST_ENERGY_WEIGHT = -0.025  # the default target is 0 (energy off); test at a nonzero weight
+cfg.rewards["motor_energy"].weight = TEST_ENERGY_WEIGHT
+# Record what each term returned inside the reward manager, so the manager-side
+# check compares against the value computed at reward time (body quantities are
+# one physics substep stale then; post-step state is not the same state).
+RECORDED = {}
+
+
+def _recording(name, fn):
+  def wrapped(env, **kw):
+    RECORDED[name] = fn(env, **kw).clone()
+    return RECORDED[name]
+  return wrapped
+
+
+for _n in ("motor_energy", "action_rate"):
+  cfg.rewards[_n].func = _recording(_n, cfg.rewards[_n].func)
 env = ManagerBasedRlEnv(cfg, device=DEV)
 env.reset()
 robot = env.scene["robot"]
@@ -102,8 +119,8 @@ def run(label, action_fn, steps=150):
       for name in R.WEIGHTS:
         check(f"{name} function == manual formula", fun[name], man[name], 1e-5 * max(1.0, float(man[name].abs().max())))
       for name in ("motor_energy", "action_rate"):
-        raw = rm._step_reward[:, rm.active_terms.index(name)] / R.WEIGHTS[name]
-        check(f"{name} manager (raw*w)/w == manual", raw[live], man[name][live], 1e-4 * max(1.0, float(man[name].abs().max())))
+        raw = rm._step_reward[:, rm.active_terms.index(name)] / rm.get_term_cfg(name).weight
+        check(f"{name} manager step_reward / weight == term value", raw, RECORDED[name], 1e-5 * max(1.0, float(RECORDED[name].abs().max())))
     for k in sums:
       sums[k] += float(man[k].mean())
     m, c = R.motor_power_w(env, XL330_COPPER_W_PER_NM2)
@@ -111,7 +128,7 @@ def run(label, action_fn, steps=150):
   print(f"  mean over {steps} steps (raw term, then x weight):")
   for k, v in sums.items():
     v /= steps
-    print(f"    {k:18s} raw {v:8.4f}   weighted {v * R.WEIGHTS[k]:+8.4f}")
+    print(f"    {k:18s} raw {v:8.4f}   weighted {v * env.reward_manager.get_term_cfg(k).weight:+8.4f}")
   print(f"    motor power: mechanical {mech / steps:.3f} W, copper {copper / steps:.3f} W")
 
 
