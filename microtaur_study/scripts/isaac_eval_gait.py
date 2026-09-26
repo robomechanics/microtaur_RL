@@ -35,6 +35,8 @@ ap.add_argument("--speeds", type=float, nargs="+", default=[0.10, 0.15, 0.20, 0.
 ap.add_argument("--turns", nargs="*", default=["0.20:-0.25", "0.20:-0.12", "0.20:0.12", "0.20:0.25"],
                 help='turning commands "v:w" (m/s : rad/s)')
 ap.add_argument("--envs-per-speed", type=int, default=16)
+ap.add_argument("--action-scale", type=float, default=None,
+                help="action_scale_rad the policy was trained with (default: read from <ckpt dir>/params/env.yaml)")
 ap.add_argument("--settle-s", type=float, default=2.0)
 ap.add_argument("--measure-s", type=float, default=6.0)
 AppLauncher.add_app_launcher_args(ap)
@@ -81,6 +83,13 @@ N = S * K
 
 cfg = MicrotaurFlatEnvCfg(play=True)
 cfg.scene.num_envs = N
+if args.action_scale is None:
+  import re
+  y = Path(args.checkpoint).parent / "params" / "env.yaml"
+  m = re.search(r"action_scale_rad: ([0-9.eE+-]+)", y.read_text()) if y.exists() else None
+  args.action_scale = float(m.group(1)) if m else None
+if args.action_scale is not None:
+  cfg.actions.joint_pos.action_scale_rad = args.action_scale
 cfg.curriculum.command_ranges = None  # the command is pinned below
 cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)
 env = ManagerBasedRLEnv(cfg)
@@ -170,7 +179,8 @@ def leg_space(q, contact):
     out["angle_range_deg"].append(round(float(np.degrees(np.ptp(th, axis=1)).mean()), 1))
     out["swing_retraction_mm"].append(round(float(1e3 * (r[c].mean() - r[~c].mean())), 2) if (~c).any() and c.any() else None)
   return out
-summary = {"checkpoint": args.checkpoint, "policy_dt_s": dt, "commands": {}}
+summary = {"checkpoint": args.checkpoint, "policy_dt_s": dt, "action_scale_rad": cfg.actions.joint_pos.action_scale_rad,
+           "commands": {}}
 for si, ((v, w), label) in enumerate(zip(CMDS, LABELS)):
   sl = slice(si * K, (si + 1) * K)
   r = {k: x[:, sl] for k, x in R.items()}

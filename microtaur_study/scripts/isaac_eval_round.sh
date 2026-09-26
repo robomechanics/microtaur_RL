@@ -29,10 +29,14 @@ for T in "$OUT"/traj_0.20.npz "$OUT"/traj_0.35.npz "$OUT"/traj_0.20_w+0.25.npz "
   [ -f "$T" ] && DISPLAY=${DISPLAY:-:1} MUJOCO_GL=glfw $PY scripts/isaac_render_traj.py --traj "$T" | tail -1
 done
 
+# The Play task must use the action scale the policy was trained with.
+SCALE=$(grep -oP "action_scale_rad: \K[0-9.eE+-]+" "$(dirname "$CK")/params/env.yaml" 2>/dev/null | head -1)
+PLAYOVR=(); [ -n "$SCALE" ] && PLAYOVR=("env.actions.joint_pos.action_scale_rad=$SCALE")
+
 echo "== Isaac Play video"
 PLAYDIR="$OUT/play_ckpt"; mkdir -p "$PLAYDIR"; cp "$CK" "$PLAYDIR/"
 (cd "$OUT" && $PY "$HERE/scripts/isaac_play.py" --task Microtaur-Isaac-Flat-Play-v0 \
-  --checkpoint "$PLAYDIR/$(basename "$CK")" --headless --video --video_length 300 > "$OUT/play.stdout" 2>&1) \
+  --checkpoint "$PLAYDIR/$(basename "$CK")" --headless --video --video_length 300 "${PLAYOVR[@]}" > "$OUT/play.stdout" 2>&1) \
   || { echo "play failed:"; tail -30 "$OUT/play.stdout"; }
 V=$(ls "$PLAYDIR"/videos/play/*.mp4 2>/dev/null | head -1 || true)
 [ -n "$V" ] && cp "$V" "$OUT/play.mp4" && echo "wrote $OUT/play.mp4"

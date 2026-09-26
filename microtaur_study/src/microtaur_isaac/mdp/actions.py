@@ -16,7 +16,7 @@ from isaaclab.managers import ActionTerm, ActionTermCfg
 from isaaclab.utils import configclass
 
 from microtaur_common.robot_constants import LEG_JOINT_NAMES
-from microtaur_common.walk_action import WalkActionCore, WalkActionParams
+from microtaur_common.walk_action import ACTION_SCALE_RAD, WalkActionCore, WalkActionParams
 
 
 class MicrotaurWalkAction(ActionTerm):
@@ -30,7 +30,8 @@ class MicrotaurWalkAction(ActionTerm):
     if tuple(names) != tuple(LEG_JOINT_NAMES):
       raise ValueError(f"Expected the eight leg motors in canonical order, got {names}")
     self._joint_ids = ids
-    params = WalkActionParams(target_gain_range=tuple(cfg.target_gain_range), target_bias_rad=float(cfg.target_bias_rad))
+    params = WalkActionParams(target_gain_range=tuple(cfg.target_gain_range), target_bias_rad=float(cfg.target_bias_rad),
+                              action_scale_rad=float(cfg.action_scale_rad))
     self.core = WalkActionCore(params, self.num_envs, self.device)
     self._raw = torch.zeros(self.num_envs, 8, device=self.device)
     self._processed = torch.zeros_like(self._raw)
@@ -72,3 +73,6 @@ class MicrotaurWalkActionCfg(ActionTermCfg):
   # pipeline uses the WalkActionParams defaults shared with mjlab.
   target_gain_range: tuple[float, float] = (1.0, 1.0)
   target_bias_rad: float = 0.0
+  # Motor offset from the stand pose at |action| = 1 (actions are clipped to +-1).
+  # The hardware controller must use the same value as the policy was trained with.
+  action_scale_rad: float = ACTION_SCALE_RAD

@@ -41,8 +41,9 @@ def zero_yaw_commands(env: ManagerBasedRLEnv, command_name: str, mask: torch.Ten
 
 class MicrotaurVelocityCommand(UniformVelocityCommand):
   """UniformVelocityCommand plus: no standing envs when rel_standing_envs <= 0
-  (the parent's `uniform <= 0.0` test can still fire on an exact 0 draw), and
-  yaw zeroed for masked envs after every resample."""
+  (the parent's `uniform <= 0.0` test can still fire on an exact 0 draw), a
+  fraction rel_straight_envs of resamples with yaw exactly 0, and yaw zeroed
+  for masked envs after every resample."""
 
   cfg: MicrotaurVelocityCommandCfg
 
@@ -50,6 +51,11 @@ class MicrotaurVelocityCommand(UniformVelocityCommand):
     super()._resample_command(env_ids)
     if self.cfg.rel_standing_envs <= 0.0:
       self.is_standing_env[env_ids] = False
+    if self.cfg.rel_straight_envs > 0.0:
+      ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long) if not isinstance(env_ids, slice) \
+        else torch.arange(self.num_envs, device=self.device)[env_ids]
+      straight = torch.rand(len(ids), device=self.device) < self.cfg.rel_straight_envs
+      self.vel_command_b[ids[straight], 2] = 0.0
     attr = self.cfg.zero_yaw_mask_attr
     mask = getattr(self._env, attr, None) if attr else None
     if mask is not None:
@@ -62,6 +68,9 @@ class MicrotaurVelocityCommand(UniformVelocityCommand):
 @configclass
 class MicrotaurVelocityCommandCfg(UniformVelocityCommandCfg):
   class_type: type = MicrotaurVelocityCommand
+  rel_straight_envs: float = 0.0
+  """Fraction of resamples whose yaw-rate command is set to exactly 0 (straight
+  walking); the rest keep the sampled yaw rate. 0 = off (all runs up to r5)."""
   zero_yaw_mask_attr: str | None = ZERO_YAW_MASK_ATTR
   """Name of an env attribute holding a [num_envs] bool mask of envs whose yaw
   command is forced to 0 (terrain C). Absent attribute or None: no masking."""
