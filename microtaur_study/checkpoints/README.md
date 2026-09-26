@@ -7,9 +7,11 @@ repo-wide; files here are added with `git add -f`.
 |---|---|---|
 | `isaac_flat_pilot2/` | `Microtaur-Isaac-Flat-v0` | first IsaacLab pilot, 2048 envs, D1 reward (tracking + Spot trot GaitReward), 28.6 Hz. `params/` holds the exact env / agent config; the tfevents file opens in TensorBoard. |
 
-`isaac_flat_pilot2/model_150.pt` is an early snapshot (iteration 150 of 1000):
-it stands and does not fall, but walks only ~0.07 m/s against 0.10-0.20 m/s
-commands.
+`isaac_flat_pilot2/model_999.pt` is the final policy (1000 iterations): no
+falls, episode-mean forward speed 0.17 m/s against 0.10-0.35 m/s commands, but
+it does not follow yaw commands and steps at ~7-8 Hz (see
+figures/isaac_eval in the working folder for the gait evaluation).
+`model_150.pt` is an early snapshot of the same run.
 
 ## View a policy in the Isaac Sim GUI
 
@@ -21,7 +23,7 @@ cd microtaur_RL/microtaur_study
 conda activate spine
 ISAACLAB_DIR=<path to IsaacLab> OMNI_KIT_ACCEPT_EULA=YES \
   python scripts/isaac_play.py --task Microtaur-Isaac-Flat-Play-v0 \
-  --checkpoint checkpoints/isaac_flat_pilot2/model_150.pt --real-time
+  --checkpoint checkpoints/isaac_flat_pilot2/model_999.pt --real-time
 ```
 
 The Play task runs 16 robots with the visual-mesh USD
@@ -36,7 +38,7 @@ randomisation and no episode timeout, commands from the final curriculum stage
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES python scripts/isaac_eval_gait.py \
-  --checkpoint checkpoints/isaac_flat_pilot2/model_150.pt --out /tmp/eval
+  --checkpoint checkpoints/isaac_flat_pilot2/model_999.pt --out /tmp/eval
 DISPLAY=:0 MUJOCO_GL=glfw python scripts/isaac_render_traj.py --traj /tmp/eval/traj_0.20.npz
 ```
 

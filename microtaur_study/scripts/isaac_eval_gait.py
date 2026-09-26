@@ -1,11 +1,11 @@
-"""Evaluate a Microtaur IsaacLab policy's gait at fixed forward commands (flat).
+"""Evaluate a Microtaur IsaacLab policy's gait at fixed commands (flat): straight and turning.
 
   OMNI_KIT_ACCEPT_EULA=YES python scripts/isaac_eval_gait.py --checkpoint <model_N.pt> --out <dir> \
-      [--speeds 0.10 0.15 0.20 0.25 0.30 0.35] [--envs-per-speed 16]
+      [--speeds 0.10 0.15 0.20 0.25 0.30 0.35] [--turns 0.20:-0.25 0.20:0.25 ...] [--envs-per-speed 16]
 
-One env per (speed, copy), all in one scene; the play config (no noise, no
+One group of envs per command, all in one scene; the play config (no noise, no
 randomisation, no episode timeout). The command is pinned every step: forward
-speed v, no lateral, no yaw. 2 s settle, 6 s measured. Same statistics as
+speed v, no lateral, yaw rate w (0 for --speeds, given for --turns "v:w"). 2 s settle, 6 s measured. Same statistics as
 scripts/eval_gait.py (mjlab): tracking, duty factor, stride frequency, phase vs
 leg 1 -> trot / pace / bound, swing clearance, body height and roll/pitch,
 motor travel, torque saturation, target-vs-actual error, power and CoT.
@@ -30,6 +30,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--checkpoint", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--speeds", type=float, nargs="+", default=[0.10, 0.15, 0.20, 0.25, 0.30, 0.35])
+ap.add_argument("--turns", nargs="*", default=["0.20:-0.25", "0.20:-0.12", "0.20:0.12", "0.20:0.25"],
+                help='turning commands "v:w" (m/s : rad/s)')
 ap.add_argument("--envs-per-speed", type=int, default=16)
 ap.add_argument("--settle-s", type=float, default=2.0)
 ap.add_argument("--measure-s", type=float, default=6.0)
@@ -67,7 +69,9 @@ from microtaur_isaac.agents import MicrotaurPPORunnerCfg  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurFlatEnvCfg  # noqa: E402
 
 FOOT_R = 0.0062
-S, K = len(args.speeds), args.envs_per_speed
+CMDS = [(v, 0.0) for v in args.speeds] + [tuple(map(float, t.split(":"))) for t in args.turns]
+LABELS = [f"{v:.2f}" if w == 0.0 else f"{v:.2f}_w{w:+.2f}" for v, w in CMDS]
+S, K = len(CMDS), args.envs_per_speed
 N = S * K
 
 cfg = MicrotaurFlatEnvCfg(play=True)
@@ -89,14 +93,16 @@ mids, _ = robot.find_joints(list(LEG_JOINT_NAMES), preserve_order=True)
 fids, _ = robot.find_bodies(list(FOOT_BODY_NAMES), preserve_order=True)
 sids, _ = sensor.find_bodies(list(FOOT_BODY_NAMES), preserve_order=True)
 foot_off = torch.tensor(FOOT_OFFSET_IN_BODY_M, device=env.device)
-v_cmd = torch.tensor(args.speeds, device=env.device).repeat_interleave(K)
+v_cmd = torch.tensor([c[0] for c in CMDS], device=env.device).repeat_interleave(K)
+w_cmd = torch.tensor([c[1] for c in CMDS], device=env.device).repeat_interleave(K)
 first = [s * K for s in range(S)]  # env recorded for the trajectory / plots
 
 
 def pin_command():
   c = cmd_term.vel_command_b
   c[:, 0] = v_cmd
-  c[:, 1:] = 0.0
+  c[:, 1] = 0.0
+  c[:, 2] = w_cmd
 
 
 dt = env.step_dt
@@ -136,8 +142,8 @@ TR = {k: torch.stack(v).cpu().numpy() for k, v in traj.items()}  # [T, S, ...]
 joint_names = list(robot.joint_names)
 
 stand = np.empty(8); stand[0::2] = STAND_A; stand[1::2] = STAND_E
-summary = {"checkpoint": args.checkpoint, "policy_dt_s": dt, "speeds": {}}
-for si, v in enumerate(args.speeds):
+summary = {"checkpoint": args.checkpoint, "policy_dt_s": dt, "commands": {}}
+for si, ((v, w), label) in enumerate(zip(CMDS, LABELS)):
   sl = slice(si * K, (si + 1) * K)
   r = {k: x[:, sl] for k, x in R.items()}
   vx = float(r["vx"].mean())
@@ -154,9 +160,10 @@ for si, v in enumerate(args.speeds):
   err = r["target"] - r["q"]
   power = r["mech"].mean() + r["copper"].mean()
   s = {
-    "cmd_m_s": v, "speed_m_s": vx, "speed_ratio": vx / v,
+    "cmd_m_s": v, "cmd_yaw_rad_s": w, "speed_m_s": vx, "speed_ratio": vx / v,
+    "yaw_rate_rad_s": float(r["wz"].mean()), "yaw_ratio": float(r["wz"].mean() / w) if w != 0.0 else None,
     "speed_env_min_max": [float(r["vx"].mean(0).min()), float(r["vx"].mean(0).max())],
-    "lateral_m_s_rms": float(np.sqrt((r["vy"] ** 2).mean())), "yaw_rate_rad_s_rms": float(np.sqrt((r["wz"] ** 2).mean())),
+    "lateral_m_s_rms": float(np.sqrt((r["vy"] ** 2).mean())), "yaw_rate_err_rad_s_rms": float(np.sqrt(((r["wz"] - w) ** 2).mean())),
     "resets_during_measure": int(r["reset"].sum()),
     "duty_factor": [round(float(x), 3) for x in duty], "stride_hz": float(np.nanmedian(freqs)),
     "touchdown_phase_vs_leg1": [round(p, 3) for p in phases], "gait": classify(phases),
@@ -171,12 +178,12 @@ for si, v in enumerate(args.speeds):
     "power_mech_w": float(r["mech"].mean()), "power_copper_w": float(r["copper"].mean()),
     "electrical_cot": float(power / (EXPECTED_TOTAL_MASS_KG * 9.81 * max(vx, 1e-3))),
   }
-  summary["speeds"][f"{v:.2f}"] = s
-  log(f"\n=== cmd {v:.2f} m/s")
+  summary["commands"][label] = s
+  log(f"\n=== cmd {v:.2f} m/s, yaw {w:+.2f} rad/s")
   for k, val in s.items():
     log(f"  {k:32s} {val}")
 
-  np.savez(out / f"traj_{v:.2f}.npz", dt=dt, joint_names=np.array(joint_names), cmd_m_s=v,
+  np.savez(out / f"traj_{label}.npz", dt=dt, joint_names=np.array(joint_names), cmd_m_s=v, cmd_yaw_rad_s=w,
            root_pos=TR["root_pos"][:, si], root_quat_wxyz=TR["root_quat_wxyz"][:, si], joint_pos=TR["joint_pos"][:, si])
 
   T = min(r["contact"].shape[0], int(2.0 / dt))
@@ -185,7 +192,7 @@ for si, v in enumerate(args.speeds):
   for k in range(4):
     axs[0].fill_between(tt, k + 0.1, k + 0.9, where=r["contact"][:T, 0, k], step="post", color="k")
   axs[0].set_yticks([0.5, 1.5, 2.5, 3.5], LEGS)
-  axs[0].set_title(f"IsaacLab, cmd {v:.2f} m/s, achieved {vx:.3f}: {s['gait']}, stride {s['stride_hz']:.2f} Hz, "
+  axs[0].set_title(f"IsaacLab, cmd {v:.2f} m/s / {w:+.2f} rad/s, achieved {vx:.3f} / {s['yaw_rate_rad_s']:+.2f}: {s['gait']}, stride {s['stride_hz']:.2f} Hz, "
                    f"duty {np.round(duty, 2).tolist()} (black = stance)")
   for j, lab in ((0, "a"), (1, "e")):
     axs[1].plot(tt, np.degrees(r["q"][:T, 0, j]), label=f"leg1 {lab} actual")
@@ -194,7 +201,7 @@ for si, v in enumerate(args.speeds):
   for k in range(4):
     axs[2].plot(tt, 1e3 * r["foot_z"][:T, 0, k], label=LEGS[k])
   axs[2].set_ylabel("foot height [mm]"); axs[2].set_xlabel("t [s]"); axs[2].legend(fontsize=7, ncol=4)
-  fig.savefig(out / f"gait_{v:.2f}.png", dpi=100, bbox_inches="tight"); plt.close(fig)
+  fig.savefig(out / f"gait_{label}.png", dpi=100, bbox_inches="tight"); plt.close(fig)
 
 (out / "summary.json").write_text(json.dumps(summary, indent=1))
 log("\nwrote", out)

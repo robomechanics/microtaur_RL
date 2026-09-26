@@ -79,6 +79,7 @@ for i, ax in enumerate(np.ravel(axs)):
   ax.axis("off")
   if i < len(strip):
     ax.imshow(strip[i]); ax.set_title(f"t = {i * 2 * dt:.2f} s", fontsize=8)
-fig.suptitle(f"IsaacLab rollout replayed in MuJoCo, cmd {float(tr['cmd_m_s']):.2f} m/s")
+yaw = float(tr["cmd_yaw_rad_s"]) if "cmd_yaw_rad_s" in tr else 0.0
+fig.suptitle(f"IsaacLab rollout replayed in MuJoCo, cmd {float(tr['cmd_m_s']):.2f} m/s, yaw {yaw:+.2f} rad/s")
 fig.savefig(f"{stem}_frames.png", dpi=90, bbox_inches="tight")
 print("wrote", f"{stem}.mp4", f"{stem}_frames.png")
