@@ -5,6 +5,7 @@ repo-wide; files here are added with `git add -f`.
 
 | folder | task | notes |
 |---|---|---|
+| `isaac_r4c_combo_smooth/` | `Microtaur-Isaac-Flat-v0` | best numbers-only tuning result (600 it): clean trot, speed tracking 0.10-0.35 m/s, but a constant random yaw and no turning. Overrides are in `params/env.yaml`; see docs/ISAAC_TUNING_LOG_2026-09-26.md. |
 | `isaac_flat_pilot2/` | `Microtaur-Isaac-Flat-v0` | first IsaacLab pilot, 2048 envs, D1 reward (tracking + Spot trot GaitReward), 28.6 Hz. `params/` holds the exact env / agent config; the tfevents file opens in TensorBoard. |
 
 `isaac_flat_pilot2/model_999.pt` is the final policy (1000 iterations): no
