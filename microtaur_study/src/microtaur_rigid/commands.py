@@ -33,7 +33,8 @@ def _apply_stage(cmd: UniformVelocityCommandCfg, stage: dict) -> None:
 def command_curriculum(env, env_ids, command_name: str, stages: tuple[dict, ...], start_step: int = 0):
   del env_ids
   step = start_step + int(getattr(env, "common_step_counter", 0))
-  idx = max(i for i, s in enumerate(stages) if step >= s["step"])
+  # Play passes only the final stage (step 90k); before that step, still use it.
+  idx = max((i for i, s in enumerate(stages) if step >= s["step"]), default=0)
   _apply_stage(env.command_manager.get_term(command_name).cfg, stages[idx])
   as_t = lambda v: torch.tensor(float(v), device=env.device)
   return {

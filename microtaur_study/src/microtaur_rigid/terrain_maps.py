@@ -4,8 +4,8 @@
   B  one FIXED map of flat-topped square cells whose heights are Gaussian,
      clipped to the ceiling. Variety comes from spawning at random positions
      and headings on it, not from regenerating the map.
-  C  flat -> sustained lateral step (left high, right low) -> flat, along +x.
-     Straight-line commands only.
+  C  low flat 0.5 m -> left half raised for 4 m (right half stays low) ->
+     low flat 0.5 m, along +x. Straight-line commands only.
 
 Difficulty d in [0, 1] scales the heights of the same pattern linearly, so a
 terrain level is "the same map, taller".
@@ -16,8 +16,8 @@ gait keeps the feet behind the hip (common +0.26 at touchdown, +0.38 at
 liftoff), where the travel is smaller -- 50% there is +10.8 / -7.6 mm -- so the
 top levels are harder than their stand-pose percentage suggests.
 
-Axes: x (axis 0) is the direction of travel, y (axis 1) lateral, heights in
-metres, every field zero-mean.
+Axes: x (axis 0) is the direction of travel, y (axis 1) lateral (+y = left),
+heights in metres. B is zero-mean; C starts and ends on z = 0.
 """
 
 from __future__ import annotations
@@ -57,18 +57,22 @@ def gaussian_blocks(nx: int, ny: int, *, difficulty: float, seed: int = 0, dx: f
 
 
 def flat_step_flat(nx: int, ny: int, *, difficulty: float, dx: float = DX_M,
-                   flat_before_m: float = 1.0, step_len_m: float = 2.0,
-                   up_m: float = UP_MAX_M, down_m: float = DOWN_MAX_M) -> np.ndarray:
-  """Terrain C. Flat approach, then left half +up / right half -down, then flat.
+                   flat_before_m: float = 0.5, step_len_m: float = 4.0,
+                   delta_m: float = UP_MAX_M + DOWN_MAX_M) -> np.ndarray:
+  """Terrain C. Low flat approach, left half raised for most of the course, low flat exit.
 
-  Seam along the centreline y = 0. Not zero-meaned: the two halves already
-  cancel to within (up - down) * step fraction, and removing a mean would lift
-  the flat approach off z = 0.
+  Everything is at z = 0 except the left half (y > 0) of the step section,
+  which is raised by difficulty * delta_m. At 100% delta = 29.5 mm: with the
+  body lowered, the left legs retract ~13.1 mm and the right legs extend
+  ~16.4 mm, i.e. 50% of each at the stand pose. The step section is most of the
+  course (4 m of 5 m), because the sustained offset is what C is for.
+
+  Not zero-meaned: approach and exit must stay on the base level, and a course
+  that starts and ends at the same height has no net grade.
   """
   z = np.zeros((nx, ny), dtype=np.float32)
   i0 = int(round(flat_before_m / dx))
   i1 = min(nx, i0 + int(round(step_len_m / dx)))
   y = np.arange(ny) - (ny - 1) / 2.0
-  z[i0:i1, y > 0] = float(difficulty) * up_m
-  z[i0:i1, y < 0] = -float(difficulty) * down_m
+  z[i0:i1, y > 0] = float(difficulty) * delta_m
   return z

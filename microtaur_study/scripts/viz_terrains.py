@@ -33,7 +33,7 @@ out.mkdir(parents=True, exist_ok=True)
 
 BODY = (0.170, 0.105)  # fore-aft x lateral foot spacing, m
 NX_B, NY_B = 1600, 1600  # 4 x 4 m at 2.5 mm
-NX_C, NY_C = 1600, 800  # 4 x 2 m at 2.5 mm
+NX_C, NY_C = 2000, 800  # 5 x 2 m at 2.5 mm
 B = T.gaussian_blocks(NX_B, NY_B, difficulty=1.0, seed=0)
 C = T.flat_step_flat(NX_C, NY_C, difficulty=1.0)
 A = T.flat(NX_B, NY_B)
@@ -51,9 +51,9 @@ def footprint(ax, x, y):
 fig, axs = plt.subplots(3, 3, figsize=(16, 13))
 vmax = 1e3 * max(T.UP_MAX_M, T.DOWN_MAX_M)
 for ax, (name, z, nx, ny) in zip(axs[0], (("A flat", A, NX_B, NY_B), ("B Gaussian blocks (100%)", B, NX_B, NY_B),
-                                          ("C flat-step-flat (100%)", C, NX_C, NY_C))):
+                                          ("C low flat - left raised - low flat (100%)", C, NX_C, NY_C))):
   im = ax.imshow(1e3 * z.T, origin="lower", extent=extent(nx, ny), cmap="RdBu_r", vmin=-vmax, vmax=vmax)
-  footprint(ax, 0.5 if name.startswith("C") else 2.0, 0.0)
+  footprint(ax, 0.3 if name.startswith("C") else 2.0, 0.0)
   ax.set_title(f"{name}\n(box = robot foot spacing 170 x 105 mm)")
   ax.set_xlabel("x, direction of travel [m]")
   ax.set_ylabel("y, lateral [m] (+y = left)")
@@ -83,7 +83,7 @@ ax = axs[1][2]
 xc = np.arange(NX_C) * T.DX_M
 ax.plot(xc, 1e3 * C[:, NY_C * 3 // 4], label="left half (y > 0)")
 ax.plot(xc, 1e3 * C[:, NY_C // 4], label="right half (y < 0)")
-ax.set_title("C along x: flat 1 m | step 2 m | flat 1 m")
+ax.set_title("C along x: flat 0.5 m | step 4 m | flat 0.5 m")
 ax.set_xlabel("x [m]")
 ax.set_ylabel("height [mm]")
 ax.legend(fontsize=8)
@@ -114,7 +114,7 @@ ax = axs[2][2]
 for d in (0.25, 0.5, 0.75, 1.0):
   Cd = T.flat_step_flat(NX_C, NY_C, difficulty=d)
   ax.plot(np.arange(NY_C) * T.DX_M - NY_C * T.DX_M / 2, 1e3 * Cd[NX_C // 2], label=f"{int(100 * d)}%")
-ax.set_title("C across y at mid-step: left high, right low")
+ax.set_title("C across y at mid-step: left raised, right stays low")
 ax.set_xlabel("y [m]")
 ax.legend(fontsize=8)
 
@@ -172,5 +172,5 @@ def render(z: np.ndarray, spawn_xy: tuple[float, float], name: str, cam: dict):
 render(B[400:1200, 400:1200], (1.0, 0.0), "B", {"distance": 0.75, "azimuth": 140, "elevation": -28})
 # C at three points along the course: still on the approach, front feet just
 # onto the step, fully on the step. Left (+y) half is high, right half low.
-for label, x in (("C_approach", 0.85), ("C_entry", 1.05), ("C_mid", 2.0)):
+for label, x in (("C_approach", 0.35), ("C_entry", 0.55), ("C_mid", 2.5)):
   render(C, (x, 0.0), label, {"distance": 0.55, "azimuth": 180, "elevation": -12})
