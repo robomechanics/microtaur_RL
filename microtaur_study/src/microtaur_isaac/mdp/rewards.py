@@ -139,7 +139,8 @@ def feet_slide(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: Sc
   off = torch.tensor(FOOT_OFFSET_IN_BODY_M, device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
   r = quat_apply(quat.reshape(-1, 4), off.reshape(-1, 3)).reshape(off.shape)
   v = _finite(d.body_link_lin_vel_w[:, asset_cfg.body_ids]) + torch.cross(_finite(d.body_link_ang_vel_w[:, asset_cfg.body_ids]), r, dim=-1)
-  speed = torch.linalg.norm(v[..., :2], dim=-1).clamp(max=_VEL_CLAMP)
+  # a PhysX blow-up step (truncated by physics_unstable) can leave NaN poses: clean the result, clamp keeps NaN
+  speed = _finite(torch.linalg.norm(v[..., :2], dim=-1)).clamp(max=_VEL_CLAMP)
   return torch.sum(speed * contact.float(), dim=1)
 
 
