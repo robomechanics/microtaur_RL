@@ -21,8 +21,8 @@ import mujoco
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from microtaur_rigid import terrain_maps as T  # noqa: E402
-from microtaur_rigid.kinematics import MicrotaurFiveBarKinematics  # noqa: E402
+from microtaur_common import terrain_maps as T  # noqa: E402
+from microtaur_common.kinematics import MicrotaurFiveBarKinematics  # noqa: E402
 from microtaur_rigid.robot import LEG_JOINT_NAMES, STAND_A, STAND_E, XML_PATH  # noqa: E402
 
 ap = argparse.ArgumentParser()

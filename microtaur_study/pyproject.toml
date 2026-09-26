@@ -1,13 +1,19 @@
 [project]
-name = "microtaur_rigid"
+name = "microtaur_study"
 version = "0.1.0"
-description = "Rigid Microtaur velocity task for mjlab (spine study)"
+description = "Rigid Microtaur locomotion (spine study): shared core, mjlab and IsaacLab environments"
 requires-python = ">=3.10,<3.14"
-dependencies = ["mjlab==1.6.0", "numpy", "torch"]
+# No dependencies are declared on purpose: the mjlab env (spine-mjlab) and the
+# IsaacLab env (spine) pin incompatible rsl-rl-lib versions (5.4.2 vs 3.0.1),
+# so each conda env installs its own framework and this package with --no-deps.
+dependencies = []
 
 [build-system]
-requires = ["uv_build>=0.8.18,<0.9.0"]
-build-backend = "uv_build"
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.entry-points."mjlab.tasks"]
 microtaur_rigid = "microtaur_rigid"

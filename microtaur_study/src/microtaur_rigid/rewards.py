@@ -49,74 +49,32 @@ from mjlab.managers.metrics_manager import MetricsTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.tasks.velocity import mdp
 
-from .commands import COMMAND_NAME
-from .sensors import FOOT_CONTACT
+from microtaur_common import reward_math as RM
+from microtaur_common.task_params import (  # noqa: F401  (re-exported for tests)
+  COMMAND_NAME, ENERGY_RAMP_ITERS, ENERGY_RAMP_STAGES, ENERGY_REF_SPEED_M_S, ENERGY_WARMUP_ITERS,
+  GAIT_MAX_ERR_S, GAIT_STD_S2, GRAVITY, LIN_VEL_SIGMA_M_S, STEPS_PER_ITER, TROT_PAIRS, WEIGHTS,
+  YAW_RATE_SIGMA_RAD_S, energy_weight_stages,
+)
+
 from .robot import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
-
-GRAVITY = 9.81
-
-LIN_VEL_SIGMA_M_S = 0.10
-YAW_RATE_SIGMA_RAD_S = 0.15
-ENERGY_REF_SPEED_M_S = 0.15
-
-# Energy curriculum: the energy weight is 0 while PPO discovers walking, then
-# ramps linearly to its target. Pilot 3 (weight on from step 0) learned to walk
-# by iteration 100 and abandoned it by 200: for the first, inefficient gait,
-# walking gained +0.40 of tracking and cost 22.5 x weight of energy, so any
-# weight above ~0.018 made standing still optimal.
-ENERGY_WARMUP_ITERS = 200
-ENERGY_RAMP_ITERS = 300
-ENERGY_RAMP_STAGES = 10
-STEPS_PER_ITER = 32  # rl_cfg num_steps_per_env; common_step_counter counts these
-
-WEIGHTS = {
-  "track_lin_vel_xy": 1.0,
-  "track_ang_vel_z": 0.5,
-  # Off for now: get a good gait first, then reintroduce energy (the sweep of
-  # 2026-09-25 showed 0.005-0.018 all keep walking with the curriculum).
-  "motor_energy": 0.0,
-  "action_rate": -0.05 / 8,
-  # mjlab multiplies by step_dt (0.035 s at 28.6 Hz): -2.0 / 0.035 per event
-  # keeps the penalty at -2.0 per termination.
-  "termination": -2.0 / 0.035,
-  # Spot's weighting (IsaacLab config/spot): gait 10 against velocity tracking 5.
-  "trot_gait": 2.0,
-}
-
-# Trot = diagonal pairs in phase: (leg1 RR, leg3 FL) and (leg2 RL, leg4 FR).
-# Indices are into the feet_ground_contact primaries (FOOT_GEOM_NAMES order).
-TROT_PAIRS = ((0, 2), (1, 3))
-# IsaacLab Spot uses std 0.1 s^2 and max_err 0.2 s for a 0.3 s air-time target.
-# Microtaur's target is ~0.15 s (the upstream AIR_TIME_TARGET_S), half the time
-# scale, so the squared-time std is quartered and the clip halved.
-GAIT_STD_S2 = 0.1 / 4
-GAIT_MAX_ERR_S = 0.2 / 2
+from .sensors import FOOT_CONTACT
 
 
 def track_lin_vel_xy(env, command_name: str, sigma: float) -> torch.Tensor:
-  cmd = env.command_manager.get_command(command_name)
-  v = env.scene["robot"].data.root_link_lin_vel_b
-  err2 = torch.sum(torch.square(cmd[:, :2] - v[:, :2]), dim=1)
-  return torch.exp(-err2 / sigma**2)
+  return RM.lin_vel_tracking(env.command_manager.get_command(command_name),
+                             env.scene["robot"].data.root_link_lin_vel_b, sigma)
 
 
 def track_ang_vel_z(env, command_name: str, sigma: float) -> torch.Tensor:
-  cmd = env.command_manager.get_command(command_name)
-  w = env.scene["robot"].data.root_link_ang_vel_b
-  return torch.exp(-torch.square(cmd[:, 2] - w[:, 2]) / sigma**2)
+  return RM.yaw_rate_tracking(env.command_manager.get_command(command_name),
+                              env.scene["robot"].data.root_link_ang_vel_b, sigma)
 
 
 def motor_power_w(env, copper_w_per_nm2: float) -> tuple[torch.Tensor, torch.Tensor]:
-  """Per-env (mechanical, copper) power in W, summed over all actuated joints.
-
-  qfrc_actuator is the joint-space actuator torque, zero on passive joints, so
-  every motor in the model is included without listing it.
-  """
-  robot = env.scene["robot"]
-  tau = robot.data.qfrc_actuator
-  mech = torch.sum(torch.abs(tau * robot.data.joint_vel), dim=1)
-  copper = copper_w_per_nm2 * torch.sum(torch.square(tau), dim=1)
-  return mech, copper
+  """Per-env (mechanical, copper) power in W over all joints. qfrc_actuator is
+  zero on passive joints, so every motor in the model is included."""
+  d = env.scene["robot"].data
+  return RM.motor_power(d.qfrc_actuator, d.joint_vel, copper_w_per_nm2)
 
 
 def motor_energy(env, copper_w_per_nm2: float, mass_kg: float, ref_speed_m_s: float) -> torch.Tensor:
@@ -125,31 +83,8 @@ def motor_energy(env, copper_w_per_nm2: float, mass_kg: float, ref_speed_m_s: fl
 
 
 def trot_gait(env, sensor_name: str, pairs, std: float, max_err: float) -> torch.Tensor:
-  """IsaacLab Spot's GaitReward, for a trot.
-
-  Product of six kernels on the running air / contact times of the feet:
-  the two feet of each diagonal pair should have the same air and contact time
-  (in phase), and each foot's air time should match the contact time of the
-  feet in the other pair (out of phase). 1 for a perfect trot, ~0 otherwise.
-  Spot additionally gates on the command being nonzero; here the forward
-  command is never zero, so it is always on.
-  """
-  data = env.scene[sensor_name].data
-  air, contact = data.current_air_time, data.current_contact_time
-  e2 = max_err**2
-
-  def sync(a, b):
-    se_air = torch.clamp(torch.square(air[:, a] - air[:, b]), max=e2)
-    se_con = torch.clamp(torch.square(contact[:, a] - contact[:, b]), max=e2)
-    return torch.exp(-(se_air + se_con) / std)
-
-  def anti(a, b):
-    se_0 = torch.clamp(torch.square(air[:, a] - contact[:, b]), max=e2)
-    se_1 = torch.clamp(torch.square(contact[:, a] - air[:, b]), max=e2)
-    return torch.exp(-(se_0 + se_1) / std)
-
-  (a0, a1), (b0, b1) = pairs
-  return sync(a0, a1) * sync(b0, b1) * anti(a0, b0) * anti(a1, b1) * anti(a0, b1) * anti(b0, a1)
+  d = env.scene[sensor_name].data
+  return RM.trot_gait(d.current_air_time, d.current_contact_time, pairs, std, max_err)
 
 
 # Metrics are computed every step whatever the reward weight is (a reward term
@@ -164,15 +99,6 @@ def copper_power_w(env, copper_w_per_nm2: float) -> torch.Tensor:
 
 def forward_speed_m_s(env) -> torch.Tensor:
   return env.scene["robot"].data.root_link_lin_vel_b[:, 0]
-
-
-def energy_weight_stages(target: float) -> list[dict]:
-  """0 for ENERGY_WARMUP_ITERS, then a linear ramp to `target` in equal steps."""
-  stages = [{"step": 0, "weight": 0.0}]
-  for k in range(1, ENERGY_RAMP_STAGES + 1):
-    it = ENERGY_WARMUP_ITERS + ENERGY_RAMP_ITERS * k / ENERGY_RAMP_STAGES
-    stages.append({"step": int(it * STEPS_PER_ITER), "weight": target * k / ENERGY_RAMP_STAGES})
-  return stages
 
 
 def configure_rewards(cfg, energy_weight: float | None = None) -> None:

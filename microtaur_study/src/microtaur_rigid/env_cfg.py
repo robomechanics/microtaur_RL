@@ -18,17 +18,13 @@ from .observations import configure_observations, validate_observation_contract
 from .rewards import configure_rewards
 from .robot import ROOT_BODY, make_robot_cfg
 from .sensors import configure_sensors
-from .sim2real import STAGES
+from microtaur_common.sim2real import STAGES
+from microtaur_common.task_params import POLICY_DT_S
 from .terminations import configure_terminations
 from .terrain import MICRO_ROUGH_TERRAINS_CFG
 
 PHYSICS_DT_S = 0.005
-# 7 x 5 ms = 35 ms = 28.6 Hz, the policy period the hardware characterisation
-# chose (Test 09: 25-33 Hz reliable, 40 Hz not deterministic) and that the
-# one-step action delay and 0.10 s filter horizon were tuned for. Every 2026-09
-# policy before this trained at 50 Hz: upstream's 30 Hz override tested for a
-# non-existent cfg.sim.dt and never ran.
-DECIMATION = 7
+DECIMATION = round(POLICY_DT_S / PHYSICS_DT_S)  # 7 -> 35 ms, 28.6 Hz (task_params.POLICY_DT_S)
 
 
 def make_env_cfg(

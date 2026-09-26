@@ -9,19 +9,7 @@ import torch
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
-COMMAND_NAME = "twist"
-RESAMPLE_S = (6.0, 10.0)
-
-# Stages are keyed by env.common_step_counter (policy steps; 32 per iteration).
-# Three front-loaded stages (TERRAIN_DESIGN.md sec. 5): turning from step 0,
-# finished by iteration ~625. Forward speed never goes to 0 and there are no
-# standing envs: standing is not trained separately. The upstream schedule
-# (0.08-0.20 m/s, yaw 0 for 25k steps, 5-10% standing) is in git history.
-COMMAND_STAGES = (
-  {"step": 0, "lin_vel_x": (0.10, 0.20), "ang_vel_z": (-0.10, 0.10), "standing": 0.0},
-  {"step": 8_000, "lin_vel_x": (0.10, 0.30), "ang_vel_z": (-0.18, 0.18), "standing": 0.0},
-  {"step": 20_000, "lin_vel_x": (0.10, 0.35), "ang_vel_z": (-0.25, 0.25), "standing": 0.0},
-)
+from microtaur_common.task_params import COMMAND_NAME, COMMAND_STAGES, RESAMPLE_S  # noqa: F401
 
 
 def _apply_stage(cmd: UniformVelocityCommandCfg, stage: dict) -> None:

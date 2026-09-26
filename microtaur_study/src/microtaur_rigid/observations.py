@@ -14,7 +14,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.utils.noise import UniformNoiseCfg
 
 from .robot import LEG_JOINT_NAMES
-from .sim2real import Sim2RealStage
+from microtaur_common.sim2real import Sim2RealStage
 
 ACTOR_TERMS = ("base_ang_vel", "projected_gravity", "joint_pos", "joint_vel", "actions", "command")
 CRITIC_TERMS = (

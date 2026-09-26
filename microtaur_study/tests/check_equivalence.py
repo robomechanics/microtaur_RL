@@ -65,11 +65,13 @@ ok = True
 
 
 def refactor_cfg():
-  """This package's cfg with the two deliberate departures undone for comparison:
-  upstream's control rate (decimation 4 = 50 Hz) and upstream's command schedule."""
+  """This package's cfg with its deliberate departures undone for comparison:
+  upstream's control rate (decimation 4 = 50 Hz), upstream's command schedule,
+  and no COM randomisation at stage 0 (it also consumes RNG at startup)."""
   from microtaur_rigid.commands import _apply_stage
   cfg = make_env_cfg()
   cfg.decimation = 4
+  cfg.events.pop("base_com", None)  # COM randomisation from stage 0 is also deliberate
   cfg.curriculum["command_ranges"].params["stages"] = upstream.COMMAND_STAGES
   _apply_stage(cfg.commands["twist"], upstream.COMMAND_STAGES[0])
   return cfg

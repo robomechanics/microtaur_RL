@@ -6,17 +6,13 @@ body-height reward term.
 
 from __future__ import annotations
 
-import math
-
 import torch
 from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.tasks.velocity import mdp
 
-from .events import NOMINAL_ROOT_HEIGHT_M
-from .sensors import BODY_CONTACT
+from microtaur_common.task_params import MAX_TILT_RAD, MIN_ROOT_HEIGHT_M
 
-MIN_ROOT_HEIGHT_M = NOMINAL_ROOT_HEIGHT_M - 0.018  # 0.052173 m
-MAX_TILT_RAD = math.radians(70.0)
+from .sensors import BODY_CONTACT
 
 
 def root_too_low(env, min_height_m: float) -> torch.Tensor:
