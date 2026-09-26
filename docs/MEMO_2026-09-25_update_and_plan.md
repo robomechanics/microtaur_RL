@@ -53,7 +53,10 @@ Cost: 2x physics steps; 150k env-steps/s at 2048 envs and dt 0.005 (idle GPU),
 `friction` is an effort (it was a coefficient on 4.5), and measured it is a
 constant Coulomb torque: set 0.010, a joint holds under 0.009 N·m and slips at
 0.011; set 0.020, holds up to 0.015 and slips fully at 0.021. XML values carry
-over. (CPU PhysX; GPU not re-checked.)
+over. ⚠ Further correction (Isaac Sim 5.1, CPU = GPU): that threshold is only
+the static part; IsaacLab's `friction=F` leaves `dynamic_friction` at 0, so a
+slipping joint has no friction. `friction=F, dynamic_friction=F` reproduces
+MuJoCo's frictionloss.
 
 **Contact model.** Open-loop replay of the same motor targets ran 13% faster and
 4.5 mm taller in PhysX. Judged unimportant here (four small spherical feet on

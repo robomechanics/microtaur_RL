@@ -164,7 +164,7 @@ def export_model(m: mujoco.MjModel, path: str) -> None:
       continue
     geoms.append({
       "name": m.geom(g).name, "body": m.body(m.geom_bodyid[g]).name,
-      "type": {mujoco.mjtGeom.mjGEOM_SPHERE: "sphere", mujoco.mjtGeom.mjGEOM_BOX: "box"}[m.geom_type[g]],
+      "type": {int(mujoco.mjtGeom.mjGEOM_SPHERE): "sphere", int(mujoco.mjtGeom.mjGEOM_BOX): "box"}[int(m.geom_type[g])],
       "size": m.geom_size[g].tolist(), "pos": m.geom_pos[g].tolist(), "quat": m.geom_quat[g].tolist(),
       "friction": float(m.geom_friction[g][0]),
     })

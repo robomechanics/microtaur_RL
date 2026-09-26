@@ -52,3 +52,17 @@ FOOT_OFFSET_IN_BODY_M = (
 )
 ROOT_BODY_NAME = "battery"
 TERRAIN_TYPES = ("A_flat", "B_blocks", "C_step")
+
+import gymnasium as gym
+
+for _name, _cfg in (("Flat", "MicrotaurFlatEnvCfg"), ("Rough", "MicrotaurRoughEnvCfg"), ("Teacher", "MicrotaurTeacherEnvCfg")):
+  gym.register(
+    id=f"Microtaur-Isaac-{_name}-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+      "env_cfg_entry_point": f"microtaur_isaac.env_cfg:{_cfg}",
+      "rsl_rl_cfg_entry_point": "microtaur_isaac.agents:"
+      + ("MicrotaurTeacherPPORunnerCfg" if _name == "Teacher" else "MicrotaurPPORunnerCfg"),
+    },
+  )

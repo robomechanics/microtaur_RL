@@ -1,0 +1,4 @@
+wrote /home/rml3/Documents/ben/spine/microtaur_RL/microtaur_study/assets/rigid_microtaur/microtaur_rigid.usda: 17 bodies, loops ['closing_leg1_c_joint_1', 'closing_leg2_c_joint_1', 'closing_leg3_c_joint_1', 'closing_leg4_c_joint_1'], MuJoCo total mass 0.540000 kg
+PhysX total mass 0.540000 kg; max |mass diff| 4.27e-09 kg; max |principal inertia diff| 5.04e-11
+joints (16): ['leg1_a_joint_act', 'leg1_e_joint_act', 'leg2_a_joint_act', 'leg2_e_joint_act', 'leg3_a_joint_act', 'leg3_e_joint_act', 'leg4_a_joint_act', 'leg4_e_joint_act', 'leg1_b_joint', 'leg1_d_joint', 'leg2_b_joint', 'leg2_d_joint', 'leg3_b_joint', 'leg3_d_joint', 'leg4_b_joint', 'leg4_d_joint']
+closure gap at stand, max over 8 sites: 9.06e-08 m
