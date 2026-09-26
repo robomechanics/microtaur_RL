@@ -7,7 +7,8 @@ Teacher-Play config (no noise / randomisation / timeout, terrain curriculum off,
 robots spread uniformly over all levels and the A/B/C columns). Every env walks
 straight at --speed (C is straight anyway) for --seconds. Per env: progress along
 its spawn heading until its first termination (or the end), whether and why it
-terminated, mean forward speed. Writes terrain_eval.json and prints a table of
+terminated (falls and time-out truncations such as leaving the map counted apart),
+mean forward speed, heading change and lateral drift from the spawn heading. Writes terrain_eval.json and prints a table of
 type x level: n, fall rate, mean progress, fraction reaching half a tile (the
 curriculum's promotion distance), mean speed.
 """
@@ -89,6 +90,10 @@ heading = torch.atan2(2 * (q[:, 0] * q[:, 3] + q[:, 1] * q[:, 2]), 1 - 2 * (q[:,
 fwd = torch.stack((torch.cos(heading), torch.sin(heading)), dim=1)
 alive = torch.ones(N, dtype=torch.bool, device=env.device)
 progress = torch.zeros(N, device=env.device)
+lateral = torch.zeros(N, device=env.device)
+yaw0 = heading.clone()
+dyaw = torch.zeros(N, device=env.device)
+side = torch.stack((-fwd[:, 1], fwd[:, 0]), dim=1)  # left of the spawn heading
 speed_sum = torch.zeros(N, device=env.device)
 steps = torch.zeros(N, device=env.device)
 cause = ["" for _ in range(N)]
@@ -102,6 +107,11 @@ with torch.inference_mode():
     now = torch.where(dones[:, None].bool(), prev, d.root_link_pos_w[:, :2])  # a reset moves the root: keep the last pose
     p = torch.sum((now - start) * fwd, dim=1)
     progress = torch.where(alive, p, progress)
+    lateral = torch.where(alive, torch.sum((now - start) * side, dim=1), lateral)
+    qn = d.root_link_quat_w
+    yaw_now = torch.atan2(2 * (qn[:, 0] * qn[:, 3] + qn[:, 1] * qn[:, 2]), 1 - 2 * (qn[:, 2] ** 2 + qn[:, 3] ** 2))
+    dy = torch.atan2(torch.sin(yaw_now - yaw0), torch.cos(yaw_now - yaw0))
+    dyaw = torch.where(alive & ~dones.bool(), dy, dyaw)
     speed_sum += torch.where(alive, d.root_link_lin_vel_b[:, 0], torch.zeros_like(p))
     steps += alive.float()
     newly = alive & dones.bool()
@@ -113,24 +123,30 @@ half_tile = TR.TILE_SIZE_M[0] / 2
 names = ("A_flat", "B_blocks", "C_step")
 rows = []
 log(f"checkpoint {args.checkpoint}\nstraight {args.speed} m/s for {args.seconds} s; promotion distance (half a tile) {half_tile:.2f} m\n")
-log(f"{'terrain':9s} {'lvl':>3s} {'n':>4s} {'fall':>6s} {'progress m':>11s} {'>= half tile':>12s} {'speed m/s':>10s}  causes")
+log(f"{'terrain':9s} {'lvl':>3s} {'n':>4s} {'fall':>6s} {'trunc':>6s} {'progress m':>11s} {'>= half tile':>12s} {'speed m/s':>10s} {'|dyaw| deg':>11s} {'|lateral| m':>12s}  causes")
 for ty in range(3):
   for lv in range(int(levels.max()) + 1):
     sel = (types == ty) & (levels == lv)
     n = int(sel.sum())
     if n == 0:
       continue
-    fell = (~alive & sel)
+    ended = (~alive & sel)
+    trunc_names = {n for n in tm.active_terms if tm.get_term_cfg(n).time_out}
+    is_trunc = torch.tensor([cause[i] in trunc_names for i in range(N)], device=env.device)
+    fell = ended & ~is_trunc
+    trunc = ended & is_trunc
     pr = progress[sel]
     sp = (speed_sum[sel] / steps[sel].clamp_min(1))
     cs = {}
-    for i in torch.nonzero(fell).flatten().tolist():
+    for i in torch.nonzero(ended).flatten().tolist():
       cs[cause[i]] = cs.get(cause[i], 0) + 1
-    row = {"terrain": names[ty], "level": lv, "n": n, "fall_rate": float(fell.sum()) / n, "progress_m": float(pr.mean()),
+    row = {"terrain": names[ty], "level": lv, "n": n, "fall_rate": float(fell.sum()) / n, "trunc_rate": float(trunc.sum()) / n,
+           "abs_dyaw_deg": float(torch.rad2deg(dyaw[sel].abs()).mean()), "abs_lateral_m": float(lateral[sel].abs().mean()),
+           "progress_m": float(pr.mean()),
            "reach_half_tile": float((pr >= half_tile).float().mean()), "speed_m_s": float(sp.mean()), "causes": cs}
     rows.append(row)
-    log(f"{row['terrain']:9s} {lv:3d} {n:4d} {row['fall_rate']:6.2f} {row['progress_m']:11.2f} {row['reach_half_tile']:12.2f} "
-        f"{row['speed_m_s']:10.3f}  {cs}")
+    log(f"{row['terrain']:9s} {lv:3d} {n:4d} {row['fall_rate']:6.2f} {row['trunc_rate']:6.2f} {row['progress_m']:11.2f} "
+        f"{row['reach_half_tile']:12.2f} {row['speed_m_s']:10.3f} {row['abs_dyaw_deg']:11.1f} {row['abs_lateral_m']:12.2f}  {cs}")
 (out / "terrain_eval.json").write_text(json.dumps({"checkpoint": args.checkpoint, "speed": args.speed, "rows": rows}, indent=1))
 LOG.close()
 os._exit(0)
