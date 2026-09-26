@@ -30,10 +30,11 @@ Semantics vs mjlab (checked on the mjlab env, 2026-09-25):
     terrain (z < 0 when standing); IsaacLab's net_forces_w is the force on the
     foot (z > 0). The term negates it to keep mjlab's sign, then applies the
     same sign(f) * log1p(|f|) compression.
-  * foot_contact: mjlab uses geometric contact ("found"); PhysX only reports
-    forces, so contact = |net force| > threshold. The default threshold is the
-    contact sensor's cfg.force_threshold, which is also what its air/contact
-    timers use, so foot_contact, foot_air_time and trot_gait agree.
+  * foot_contact / foot_air_time: mjlab uses geometric contact ("found"); PhysX
+    only reports forces, and a resting foot gets zero impulse in some physics
+    substeps. Both terms come from mdp.contact.foot_contact_timers (|force| >
+    the sensor's force_threshold in any substep of the policy step; timers at
+    the policy rate), the same source as the trot_gait reward.
     IsaacLab's default (1.0 N) is ~20% of the robot's weight (0.54 kg -> 5.3 N,
     ~1.3 N per foot in 4-foot stance); set it to CONTACT_FORCE_THRESHOLD_N.
 """
@@ -57,6 +58,7 @@ from microtaur_common.sim2real import Sim2RealStage
 from microtaur_common.task_params import COMMAND_NAME
 
 from .. import FOOT_BODY_NAMES, FOOT_OFFSET_IN_BODY_M
+from .contact import foot_contact_timers
 
 if TYPE_CHECKING:
   from isaaclab.envs import ManagerBasedRLEnv
@@ -192,15 +194,12 @@ def foot_height(
 
 
 def foot_air_time(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
-  return env.scene.sensors[sensor_cfg.name].data.current_air_time[:, sensor_cfg.body_ids]
+  return foot_contact_timers(env, sensor_cfg)[1]
 
 
-def foot_contact(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold: float | None = None) -> torch.Tensor:
-  """1.0 where |net contact force| > threshold (default: the sensor's
-  cfg.force_threshold, the same test its air-time timers use)."""
-  sensor = env.scene.sensors[sensor_cfg.name]
-  thr = sensor.cfg.force_threshold if threshold is None else threshold
-  return (torch.norm(sensor.data.net_forces_w[:, sensor_cfg.body_ids], dim=-1) > thr).float()
+def foot_contact(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+  """1.0 where the foot touched the ground in any substep of this policy step."""
+  return foot_contact_timers(env, sensor_cfg)[0].float()
 
 
 def foot_contact_forces(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:

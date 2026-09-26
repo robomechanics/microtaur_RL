@@ -26,10 +26,12 @@ IsaacLab vs mjlab:
     either simulator.
   * is_terminated: termination_manager.terminated = OR of the terms with
     time_out=False, computed in the same step before the reward, same as mjlab.
-  * trot_gait: contact sensor current_air_time / current_contact_time. IsaacLab
-    updates them when the sensor updates; with history_length > 0 it updates
-    every physics substep (like mjlab), with history_length = 0 only when read
-    (once per policy step). Contact = |net force| > sensor cfg.force_threshold.
+  * trot_gait: air / contact times from mdp.contact.foot_contact_timers, NOT
+    the sensor's current_air_time / current_contact_time: PhysX gives a resting
+    foot zero impulse in some substeps, which restarted the sensor's timers
+    every ~10 ms and let foot chatter score as a perfect trot (flat_pilot2).
+    Contact = |net force| > force_threshold in any substep of the policy step;
+    timers at the policy rate (mjlab: geometric contact, per substep).
   * finite inputs: an env whose PhysX state blew up (terminations.physics_unstable)
     still gets one reward before its reset; the simulator quantities read here
     pass through _finite() so that reward, and the metric sums, stay finite.
@@ -58,6 +60,7 @@ from microtaur_common.task_params import (  # noqa: F401  (re-exported)
   WEIGHTS, YAW_RATE_SIGMA_RAD_S, energy_weight_stages,
 )
 
+from .contact import foot_contact_timers
 from .observations import ROBOT, feet_sensor_cfg, legs_cfg
 
 if TYPE_CHECKING:
@@ -104,9 +107,8 @@ def motor_energy(
 
 
 def trot_gait(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, pairs, std: float, max_err: float) -> torch.Tensor:
-  d = env.scene.sensors[sensor_cfg.name].data
-  ids = sensor_cfg.body_ids
-  return RM.trot_gait(d.current_air_time[:, ids], d.current_contact_time[:, ids], pairs, std, max_err)
+  _, air, con = foot_contact_timers(env, sensor_cfg)
+  return RM.trot_gait(air, con, pairs, std, max_err)
 
 
 def forward_speed_m_s(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:

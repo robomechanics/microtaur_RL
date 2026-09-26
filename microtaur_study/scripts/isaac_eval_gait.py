@@ -67,6 +67,8 @@ from microtaur_common.robot_constants import (  # noqa: E402
 from microtaur_isaac import FOOT_BODY_NAMES, FOOT_OFFSET_IN_BODY_M  # noqa: E402
 from microtaur_isaac.agents import MicrotaurPPORunnerCfg  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurFlatEnvCfg  # noqa: E402
+from microtaur_isaac.mdp.contact import foot_contact_timers  # noqa: E402
+from microtaur_isaac.mdp.observations import feet_sensor_cfg  # noqa: E402
 
 FOOT_R = 0.0062
 CMDS = [(v, 0.0) for v in args.speeds] + [tuple(map(float, t.split(":"))) for t in args.turns]
@@ -91,7 +93,8 @@ term = env.action_manager.get_term("joint_pos")
 cmd_term = env.command_manager.get_term("twist")
 mids, _ = robot.find_joints(list(LEG_JOINT_NAMES), preserve_order=True)
 fids, _ = robot.find_bodies(list(FOOT_BODY_NAMES), preserve_order=True)
-sids, _ = sensor.find_bodies(list(FOOT_BODY_NAMES), preserve_order=True)
+feet_cfg = feet_sensor_cfg()
+feet_cfg.resolve(env.scene)  # contact = touched in any substep of the policy step (as the reward)
 foot_off = torch.tensor(FOOT_OFFSET_IN_BODY_M, device=env.device)
 v_cmd = torch.tensor([c[0] for c in CMDS], device=env.device).repeat_interleave(K)
 w_cmd = torch.tensor([c[1] for c in CMDS], device=env.device).repeat_interleave(K)
@@ -127,7 +130,7 @@ with torch.inference_mode():
     rec["wz"].append(d.root_link_ang_vel_b[:, 2])
     rec["z"].append(d.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2])
     rec["roll"].append(torch.atan2(-g[:, 1], -g[:, 2])); rec["pitch"].append(torch.asin(torch.clamp(g[:, 0], -1, 1)))
-    rec["contact"].append(torch.linalg.norm(sensor.data.net_forces_w[:, sids], dim=-1) > sensor.cfg.force_threshold)
+    rec["contact"].append(foot_contact_timers(env, feet_cfg)[0].clone())
     rec["foot_z"].append(foot_w[..., 2] - env.scene.env_origins[:, None, 2] - FOOT_R)
     rec["q"].append(d.joint_pos[:, mids]); rec["target"].append(term.core.applied.clone())
     rec["tau"].append(tau)

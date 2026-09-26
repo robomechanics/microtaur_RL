@@ -37,7 +37,7 @@ COMMAND_STAGES = (
 
 GRAVITY = 9.81
 LIN_VEL_SIGMA_M_S = 0.10
-YAW_RATE_SIGMA_RAD_S = 0.15
+YAW_RATE_SIGMA_RAD_S = 0.10  # 0.15 in flat_pilot2: not turning still earned most of the term
 ENERGY_REF_SPEED_M_S = 0.15
 
 WEIGHTS = {
