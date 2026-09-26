@@ -109,3 +109,112 @@ the top-view path and the videos before judging. Folders are
 - Not solved: (1) every run turns at a constant, random-direction yaw rate because one REAR leg barely swings, and none follows yaw commands; (2) stride 5.7-7.1 Hz (fast).
 - Best candidate to build on: r4c_combo_smooth (action_rate -0.08, GaitReward std 0.1 / max_err 0.2, lin sigma 0.07, yaw sigma 0.10, yaw +-0.25 from start).
 - Proposed next step (needs approval, not a reward term): rsl_rl symmetry augmentation with a left/right mirror of observations and actions (mirrors yaw commands too), which targets exactly the random left/right asymmetry.
+
+## r6 (user approved 2026-09-26: rescale the curriculum to the screen length, add straight commands; user also flagged: stride too fast, tapping/rocking instead of extension)
+- Found: 600-it screens never reached the last curriculum stage (step 20000 = it 625), so vx 0.30-0.35 (and yaw 0.25 in r1-r3) were never trained but were evaluated.
+- Found: the r4c policy's requested motor offsets sit at the action bound (|common|+|diff| = max motor offset, p50 0.49-0.52 rad = 30 deg x 1) while the safety filter never changes them by > 1 deg. The +-30 deg action scale, not the filter, caps extension (joint range +-43 deg, filter diamond 0.70 rad).
+- New config values: commands.twist.rel_straight_envs (fraction of yaw = 0 commands), actions.joint_pos.action_scale_rad (hardware must use the same value).
+- r6a_straight: r4c + curriculum stages at step 0 / 4000 / 10000 + 30% straight
+- r6b_scale40: r6a + action scale 30 -> 40 deg (0.70 rad)
+- r6c_scale40_smooth: r6b + action_rate -0.08 -> -0.11
+
+## r7 (queued after r6): second gait-shaping term, approved by the user
+- feet_air_time = IsaacLab Spot air_time_reward (user: use the standard open-source trot method, not upstream's): each foot earns the duration of its current air/contact phase, capped at mode_time, and 0 once the phase is longer -> phases pushed toward mode_time (period ~2 x mode_time). GaitReward sets which legs pair; air_time sets how long each step is.
+- On the r4c tapping gait it earns 0.21 per step of a possible 0.6 (mode 0.15) / 1.2 (mode 0.3): lengthening phases pays 3-6x.
+- r7a_air02: r6a + air_time weight 1.0, mode_time 0.2 s (Spot ratio air:gait = 1:2)
+- r7b_air03: r6a + air_time weight 1.0, mode_time 0.3 s (Spot's value)
+- r7c_air02_w2: r6a + air_time weight 2.0, mode_time 0.2 s
+
+### r6a_straight: r4c + curriculum rescaled (final stage from it 312) + 30% straight commands
+- Numbers: best speed tracking so far (0.116 / 0.182 / 0.327 at cmd 0.10 / 0.20 / 0.35, ratio 0.91-1.16 at every speed); trot, duty ~0.51; drift much smaller at 0.20 m/s (mean yaw -0.02..-0.04 rad/s at every yaw command; env 0 heading -22 deg / 6 s) but +0.27 rad/s at 0.35; still no command following (+-0.25 -> -0.03); stride 7.1 Hz; torque saturation 0.21 (0.38 at 0.35).
+- Top view: nearly straight (~20 deg right in 4 s) -- first run that walks roughly straight. Close-ups: RR stays crouched (r 50-58 mm, angle ~0 deg) and taps; FR moderate 73-87 mm. Still tapping.
+- Verdict: straight commands + reaching the final curriculum stage fixed most of the drift and the 0.35 m/s tracking. Turning and tapping remain (-> r7 air_time).
+
+## r6 stopped by the user after r6a (r6b_scale40 killed at ~it 180, r6c not run); r7 started directly.
+
+### r7a_air02: r6a + Spot air_time weight 1.0, mode_time 0.2 s
+- Numbers: stride 5.7 Hz (from 7.1), clearance 10-17 mm, swing retraction up (FR 17-20 mm, RR 10-12 mm; RL 4-7, FL 6-8); speed 0.114 / 0.185 / 0.304 (ratio 0.87-1.14); some yaw response for the first time with a left bias (+0.165 at +0.25, +0.077 at -0.25, +0.12 straight; spread 0.09 rad/s); duty rear 0.60 / front 0.44-0.49 at <= 0.25 m/s -> "irregular (closest trot)"; pitch -8; torque saturation 0.26 (0.39 at 0.35), CoT 14.
+- Frames (checked 2026-09-26 12:55): FR swings forward and retracts/extends clearly (r 70 <-> 98 mm, angle +2..+28 deg); RR uses both motors; FL kicks to 30-36 mm every step (too high); rear legs stay down longer than front (duty 0.60 vs 0.44-0.49), hence "irregular".
+
+### r7b_air03: r6a + Spot air_time weight 1.0, mode_time 0.3 s (Spot's value)
+- Numbers: stride 5.7 Hz (same as r7a; mode 0.2-0.3 s would mean ~1.7-2.5 Hz), trot at 0.15-0.35, speed ratio ~1.0 (0.136 / 0.201 / 0.300), retraction RR 11, FR 13-15, FL 9, RL 4-6 mm; strong left bias again (+0.30..+0.34 at every yaw command; heading +113 deg / 6 s straight); pitch -11, roll -6.5; torque saturation 0.27, CoT 13.
+- Frames: not viewed (viewer was down; r7a / r8a / r8b checked instead, see "Frame check of r7 / r8")
+- Reading so far: air_time lowers the stride from 7.1 to 5.7 Hz and lengthens retraction, but at weight 1.0 phases stay far below mode_time; the random turn bias is back (r6a had it mostly removed).
+
+### r7c_air02_w2: r6a + air_time weight 2.0, mode 0.2
+- Numbers: same as r7b: stride 5.7 Hz, trot, speed 0.121 / 0.189 / 0.277, left bias +0.29, RL weak (arc 2-4 mm), pitch -11.
+- Frames: not viewed (viewer was down; r7a / r8a / r8b checked instead, see "Frame check of r7 / r8")
+
+## r7 summary
+- The air_time term earns the SAME per-step value at weight 1 and 2 (0.254 of 0.8 at mode 0.2 = 32%; 21% of 1.2 at mode 0.3) while trot_gait is ~saturated (1.79-1.89 / 2.0): the policy cannot lengthen the phases, not that it does not want to.
+- r7a's requested motor offsets sit at the +-30 deg action bound (|common|+|diff| p50 0.52 rad on three legs, max 0.52 on all four; filter changes nothing > 1 deg). At a given speed a slower stride needs a longer stroke, which the action scale does not allow -> the scale caps stride length and forces the high stride rate.
+- The random turn bias came back with air_time (r7b/c +0.3 rad/s); r7a had a small yaw response.
+
+## r8 (launched without the r7 frame check -- the viewer is down; motivated by the measured action-bound saturation, not by the r7 frames)
+- r8a_air02_scale40: r7a + action scale 40 deg (0.70 rad = filter diamond)
+- r8b_air02w2_scale40: r7c + action scale 40 deg
+- r8c_air03_scale40: r7b + action scale 40 deg
+
+### r8a_air02_scale40: r7a + action scale 40 deg
+- Numbers: straightest run so far (heading +2 deg in 6 s at 0.20 m/s; mean yaw -0.02..-0.04 at every yaw command) but no command following; stride still 5.7 Hz and air_time still 0.256 (identical to r7) -> the +-30 deg action bound was NOT what capped the phase length (hypothesis rejected). Motor travel p95 now 0.9-1.0 of the joint half-range on several motors; FR leg angle -27 deg (foot behind the hip) vs FL +18 deg; duty 0.62 / 0.44 on the two diagonals; speed 0.156 / 0.205 / 0.288; pitch -10; torque saturation 0.30.
+- Frames (checked 2026-09-26 12:55): clean diagonal alternation, both RR motors move (a 0..45 deg, e -65..-35 deg), feet lift 8-23 mm; but FR stays long (73-96 mm) and angled BACKWARD (-21..-32 deg) the whole time; diagonals unequal (0.62 / 0.45).
+- Open question: what keeps every phase at ~2.5 policy steps (stride 5 steps) across r3-r8 regardless of air_time weight, mode_time or action scale. Candidates to test: tight tracking sigmas (0.07 m/s) rewarding smooth body velocity, action_rate, the 1-step action delay + 0.10 s filter horizon, the compliant KP=1 servo.
+
+### r8b_air02w2_scale40: r7c (air weight 2.0, mode 0.2) + action scale 40 deg
+- Numbers: first stride below 5 Hz (4.76 Hz = 6-step period) and first straight commands that PASS all criteria (0.20 and 0.25 m/s: trot, stride, clearance, speed); air_time per unit weight 0.285 (from 0.254). Straight: mean yaw within +-0.02 rad/s (heading -21 deg / 6 s env 0). But speed no longer follows the command (0.21-0.23 m/s at every command: 0.10 -> 2.1x, 0.35 -> 0.66x); legs split by side (RR / FR mean angle -21 / -24 deg, RL / FL +9 / +15 deg); pitch -13 deg; no turning.
+- So air weight 2.0 lowers the stride only together with the 40 deg action scale (r7c at 30 deg stayed at 5.7 Hz).
+- Frames (checked 2026-09-26 12:55): regular 6-step cycle, BUT RR's a motor sits pinned at its joint limit (~66 deg, target flat) and only the e motor steps -> a one-motor leg, not five-bar retract/extend; FR nearly straight (82-101 mm) and angled back -14..-34 deg; RR crouched 46-63 mm; FL kicks to 30-35 mm; body nose-up 13 deg. Passing two straight commands in the table does NOT mean a usable gait.
+
+### r8c_air03_scale40: r7b (air weight 1.0, mode 0.3) + action scale 40 deg
+- Numbers: stride 5.7 Hz, trot, speed tracking good (0.117 / 0.199 / 0.298), right bias -0.14 rad/s (heading -39 deg / 6 s), yaw spread between +-0.25 commands only 0.04 rad/s; retraction 7-13 mm; RL mean angle -26 deg vs RR +7; air_time 0.243.
+- Frames: not viewed (viewer was down; r7a / r8a / r8b checked instead, see "Frame check of r7 / r8")
+
+## r8 summary
+- Only r8b (air weight 2.0 + 40 deg scale) lowered the stride (4.76 Hz) and passed two straight commands, but it lost speed modulation (0.21-0.23 m/s at every command). r8a is the straightest walker (+2 deg / 6 s) but still 5.7 Hz. None follows yaw commands. Loop paused after r8: image viewer down (no frame checks since r7) and the phase-length limit needs a diagnosis rather than more numeric variants.
+
+## Frame check of r7 / r8 (done 2026-09-26 12:55, viewer back)
+- The 40 deg action scale lets the policy park motors at joint limits (r8b: RR a-motor pinned) and hold FR straight and swept back (r8a, r8b). r8b's lower stride comes with a distorted posture -> not a candidate.
+- Most usable-looking so far: r6a (30 deg, straight commands; nearly straight path) and r7a (30 deg + air_time 0.2; FR clearly retracts/extends, but FL over-kicks and rear/front duty unequal).
+
+## Body lean-back (user: "is the robot leaning back too much? check")
+- Nose-up pitch per run (0.20 m/s): r2b 4.3, r4b 3.7, r6a 7.1, r7a 8.1, r7b/c 10.7-10.9, r1 12.4, r3a 12.8, r8b 12.6 deg; nominal stand 0.
+- Fully explained by leg lengths (five-bar FK): front legs 76-90 mm, rear 50-65 mm vs 73.5 nominal; atan((front-rear)/168 mm hip spacing) matches the measured pitch within ~1 deg.
+- The worst gaits lean most; the cleanest (r2b, r4b) lean < 5 deg. Rear legs crouched at 50-55 mm have no room to retract in swing, front legs at 86-90 mm are nearly straight -> both ends at the workspace edge -> short fast steps. Likely the real cause of the capped stride.
+- The reward has no posture term (D0 removed upright / height; only the 70 deg tilt termination).
+
+## Standard reward sets (looked up 2026-09-26)
+- legged_gym LeggedRobotCfg defaults: tracking_lin_vel 1.0, tracking_ang_vel 0.5, lin_vel_z -2.0, ang_vel_xy -0.05, orientation 0, torques -1e-5, dof_acc -2.5e-7, base_height 0, feet_air_time 1.0, collision -1, action_rate -0.01; ANYmal-C flat: orientation -5.0, feet_air_time 2.0.
+- IsaacLab velocity RewardsCfg: track_lin_vel_xy_exp 1.0, track_ang_vel_z_exp 0.5, lin_vel_z_l2 -2.0, ang_vel_xy_l2 -0.05, dof_torques_l2 -1e-5, dof_acc_l2 -2.5e-7, action_rate_l2 -0.01, feet_air_time 0.125, undesired_contacts -1, flat_orientation_l2 0 (flat configs: -2.5 A1/Go1/Go2, -5.0 ANYmal).
+- Posture terms taken: flat_orientation_l2 (= legged_gym orientation), lin_vel_z_l2, ang_vel_xy_l2 (user approved: "reward needs body posture").
+
+## r9 (base r7a) body posture
+- r9a_orient2p5: flat_orientation_l2 -2.5
+- r9b_orient5: flat_orientation_l2 -5.0
+- r9c_posture_full: orientation -5.0 + lin_vel_z -2.0 + ang_vel_xy -0.05
+- r9d_orient10: flat_orientation_l2 -10.0 (8 deg lean costs only ~0.1/s at -5 vs tracking 1.0)
+- Next (r10, on the best r9): turning as two separate experiments: (a) a dedicated turn term, (b) rsl_rl left/right symmetry augmentation.
+
+### r9a_orient2p5: r7a + flat_orientation_l2 -2.5
+- Numbers: lean-back 8.1 -> 3.0 deg (front legs 72 mm, rear 64 mm vs 79 / 58 in r7a; nominal 73.5); best speed tracking of all runs (ratio 0.94-1.06 at EVERY speed 0.10-0.35); trot, duty 0.50 on all legs, clearance 11-13 mm, retraction 6-12 mm, torque saturation 0.17. But stride back to 7.1 Hz (r7a 5.7), air_time 0.21 (lower), right bias -0.25 rad/s (no turning).
+- Frames: body visibly level; clean 50/50 diagonals; all legs lift 8-25 mm; both motors of RR move; FR 70-85 mm swinging +14..+27 deg, RR 55-69 mm.
+- Reading: the orientation term fixes the lean and helps speed tracking, but a level body did NOT lengthen the stride -> the lean was not the stride limiter (hypothesis rejected).
+
+### r9b_orient5: r7a + flat_orientation_l2 -5.0
+- Numbers: level body (nose-up 2.8, roll -2; front 71 / rear 63 mm), speed ratio 0.88-1.17 (0.117 / 0.199 / 0.309), trot, duty ~0.50-0.56, retraction 4-11 mm, clearance 10-13 mm, torque saturation 0.19; stride 7.1 Hz; small left bias (+0.05..+0.07 rad/s; env 0 heading +37 deg / 6 s), yaw response ~0 (+0.069 at +0.25 vs +0.049 at -0.25).
+- Frames (checked 14:32): body level; RL retracts/extends 58 <-> 74 mm but sits behind the hip (-18..-25 deg), FL 67 <-> 79 mm swinging +11..+26 deg; regular 4-step cycle; top view gently curving left (~25 deg in 4 s).
+- Same picture as r9a: posture fixed, stride and turning not.
+
+### r9c_posture_full: r7a + orientation -5 + lin_vel_z -2 + ang_vel_xy -0.05 (legged_gym posture set)
+- Numbers: level (nose-up 2.0, roll -0.2) and nearly straight (env 0 +11 deg / 6 s), but WORSE gait: speed no longer follows the command (0.195 / 0.203 / 0.216 at 0.10 / 0.20 / 0.35), "irregular" at every command (FL duty 0.62), front legs barely retract (FL +1.5, FR -5 mm: longer in swing), clearance 8-9 mm, torque saturation 0.35, trot_gait 1.67 (lower); no turning.
+- Frames (checked 14:32): feet lift only 5-14 mm (mostly < 10), FL stance blocks lengthen irregularly, small fast tip-toe steps.
+- Reading: lin_vel_z_l2 -2 costs -0.046/s here (the tiny robot bounces relative to its size); with ang_vel_xy it suppresses the body motion a step needs. Standard weights are tuned for 30-50 kg robots; not a fit at these weights.
+
+## r9 end (r9d stopped at ~it 300) -- user: foot lift / retraction is fine for now, leave it to rough terrain (no reason for the move to emerge on flat); start the terrain curriculum.
+
+# Terrain curriculum
+## c1_teacher (Microtaur-Isaac-Teacher-v0, 2048 envs, 1500 it)
+- Terrain: A flat / B Gaussian blocks / C flat-step-flat at 20/50/30 %, 5 levels, promotion = walked > half a tile from the spawn, demotion = < half the commanded distance; teacher actor and critic see the critic set + 35 mm height map.
+- Reward = flat best: r6a base (action_rate -0.08, GaitReward std 0.1 / max_err 0.2, lin sigma 0.07, yaw sigma 0.10) + air_time 1.0 (mode 0.2) + flat_orientation_l2 -2.5 (r9a; IsaacLab switches it off on rough, -2.5 is a compromise) + heading_tracking 1.0; commands: rescaled curriculum, yaw +-0.25 from start, 30 % straight.
+- Turning: heading_tracking AND left/right symmetry augmentation together (user: do both at once).
+
+(2026-09-26 15:00, reorganised: flat run folders moved to figures/isaac_eval/flat/<run>_it<N>/, flat videos to figures/isaac_play/flat/, superseded flat checkpoints to runs_local/isaac/archive/flat_checkpoints/. Paths above written as figures/isaac_eval/<run> now live under figures/isaac_eval/flat/. Layout: /home/rml3/Documents/ben/spine/README.md)
