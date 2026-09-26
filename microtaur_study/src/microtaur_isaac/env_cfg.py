@@ -105,6 +105,19 @@ def terrain_levels_from_spawn(env, env_ids, command_name: str = "twist") -> torc
   return torch.mean(terrain.terrain_levels.float())
 
 
+def hard_terrain_placement(env, env_ids) -> None:
+  """Startup (Teacher-Hard): every env on a B or C column (A skipped, round-robin over
+  the B / C columns, so 5:3 like the generator) at the hardest level, for the whole
+  run. Must run before terrain_flags (the zero-yaw mask reads the terrain types)."""
+  from . import terrains as TR
+  terrain = env.scene.terrain
+  cols = [c for c, t in enumerate(TR.COLUMN_TERRAIN_TYPES) if t != "A_flat"]
+  n = env.num_envs
+  terrain.terrain_types[:] = torch.tensor(cols, device=terrain.terrain_types.device)[torch.arange(n) % len(cols)]
+  terrain.terrain_levels[:] = TR.NUM_LEVELS - 1
+  terrain.env_origins[:] = terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
+
+
 def terrain_flags(env, env_ids) -> None:
   """Startup: env.microtaur_zero_yaw_mask = True on terrain C (straight commands only)."""
   terrain = env.scene.terrain
@@ -291,5 +304,27 @@ class MicrotaurRoughPlayEnvCfg(MicrotaurRoughEnvCfg):
 
 @configclass
 class MicrotaurTeacherPlayEnvCfg(MicrotaurTeacherEnvCfg):
+  play: bool = True
+  scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
+
+
+@configclass
+class MicrotaurTeacherHardEnvCfg(MicrotaurTeacherEnvCfg):
+  """No terrain curriculum: every robot on the hardest B or C tiles from iteration 0
+  (side experiment: can the teacher learn the hard terrain directly?)."""
+
+  def __post_init__(self):
+    super().__post_init__()
+    self.curriculum.terrain_levels = None
+    events = _Events()
+    setattr(events, "hard_terrain_placement", EventTermCfg(func=hard_terrain_placement, mode="startup"))
+    for k, v in self.events.to_dict().items():
+      if v is not None:
+        setattr(events, k, getattr(self.events, k))
+    self.events = events
+
+
+@configclass
+class MicrotaurTeacherHardPlayEnvCfg(MicrotaurTeacherHardEnvCfg):
   play: bool = True
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
