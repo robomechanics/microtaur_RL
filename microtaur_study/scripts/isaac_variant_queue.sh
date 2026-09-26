@@ -10,6 +10,7 @@
 # last checkpoint into figures/isaac_eval/<run_name>_it<N>. Prints
 # "VARIANT_DONE <run_name> <eval dir>" or "VARIANT_FAILED <run_name>" per line.
 set -uo pipefail
+set -f  # overrides contain [ ] { }: no globbing when they are word-split
 Q=$1; shift
 ITERS=600
 [[ ${1:-} == --iters ]] && ITERS=$2
