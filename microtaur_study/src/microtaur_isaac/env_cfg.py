@@ -393,6 +393,12 @@ class MicrotaurTeacherCurEnvCfg(MicrotaurTeacherEnvCfg):
   cur_terrain: bool = True
   terrain_scale: float = 2.0
 
+  def __post_init__(self):
+    super().__post_init__()
+    # The C guard rails guide, they do not end the episode (a centred trot with +-0.1 rad
+    # yaw wiggle brushes a rail at 0.12 m); only the body landing on the ground terminates.
+    self.terminations.illegal_contact.params["vertical_only"] = True
+
 
 @configclass
 class MicrotaurTeacherCurPlayEnvCfg(MicrotaurTeacherCurEnvCfg):

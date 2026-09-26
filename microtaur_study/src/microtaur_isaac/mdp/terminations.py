@@ -68,10 +68,19 @@ def root_too_low(
   return robot.data.root_link_pos_w[:, 2] - ground < min_height_m
 
 
-def body_contact(env: ManagerBasedRLEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+def body_contact(env: ManagerBasedRLEnv, threshold: float, sensor_cfg: SceneEntityCfg,
+                 vertical_only: bool = False) -> torch.Tensor:
   """|net force| on the sensor_cfg bodies > threshold anywhere in the sensor's
-  force history (identical to IsaacLab's mdp.illegal_contact)."""
+  force history (identical to IsaacLab's mdp.illegal_contact).
+
+  vertical_only: count only mostly vertical contacts (|Fz| > threshold and |Fz| >=
+  |Fxy|), i.e. the body resting on the ground; a side push from a C-lane guard rail
+  (normal horizontal, friction <= 0.8 x normal) does not terminate."""
   forces = env.scene.sensors[sensor_cfg.name].data.net_forces_w_history[:, :, sensor_cfg.body_ids]  # [N, H, B, 3]
+  if vertical_only:
+    fz = forces[..., 2].abs()
+    hit = (fz > threshold) & (fz >= torch.linalg.norm(forces[..., :2], dim=-1))
+    return torch.any(torch.any(hit, dim=1), dim=1)
   return torch.any(torch.amax(torch.norm(forces, dim=-1), dim=1) > threshold, dim=1)
 
 
