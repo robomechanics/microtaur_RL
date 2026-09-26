@@ -9,12 +9,13 @@
 # checkpoints: .../logs/rsl_rl/<experiment>/<date>_<run_name>/ (params/env.yaml records the overrides).
 set -uo pipefail
 RUN=$1; shift
-TASK=Microtaur-Isaac-Flat-v0; ENVS=2048; ITERS=1000
+TASK=Microtaur-Isaac-Flat-v0; ENVS=2048; ITERS=1000; AGENT=()
 while [[ $# -gt 0 && $1 == --* ]]; do
   case $1 in
     --task) TASK=$2; shift 2;;
     --envs) ENVS=$2; shift 2;;
     --iters) ITERS=$2; shift 2;;
+    --agent) AGENT=(--agent "$2"); shift 2;;  # e.g. rsl_rl_sym_cfg_entry_point
     *) echo "unknown option $1"; exit 2;;
   esac
 done
@@ -22,9 +23,9 @@ ROOT=/home/rml3/Documents/ben/spine/runs_local/isaac
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 mkdir -p "$ROOT"; cd "$ROOT"
 LAST=model_$((ITERS - 1)).pt
-echo "$(date '+%F %T') $RUN task=$TASK envs=$ENVS iters=$ITERS overrides: $*" >> "$ROOT/variants.txt"
+echo "$(date '+%F %T') $RUN task=$TASK envs=$ENVS iters=$ITERS ${AGENT[*]} overrides: $*" >> "$ROOT/variants.txt"
 OMNI_KIT_ACCEPT_EULA=YES /home/rml3/anaconda3/envs/spine/bin/python "$HERE/scripts/isaac_train.py" \
-  --task "$TASK" --num_envs "$ENVS" --headless --max_iterations "$ITERS" --run_name "$RUN" "$@" > "$RUN.log" 2>&1 &
+  --task "$TASK" --num_envs "$ENVS" --headless --max_iterations "$ITERS" --run_name "$RUN" "${AGENT[@]}" "$@" > "$RUN.log" 2>&1 &
 P=$!
 until ls logs/rsl_rl/*/*_"$RUN"/"$LAST" >/dev/null 2>&1 || ! kill -0 $P 2>/dev/null || grep -q Traceback "$RUN.log"; do sleep 20; done
 sleep 5; kill $P 2>/dev/null; sleep 3; kill -9 $P 2>/dev/null
