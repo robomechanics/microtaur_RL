@@ -8,6 +8,7 @@ termination penalty and a trot-gait kernel. Port of microtaur_rigid/rewards.py.
       - 2.0/dt per non-timeout termination                  termination
       + 2.0   * trot kernel (Spot GaitReward)               trot_gait
       + w_A   * Spot air_time_reward (phase durations)      feet_air_time (0 = off by default)
+      + w_o * g_xy^2 + w_z * v_z^2 + w_w * |w_xy|^2           body posture (0 = off by default)
 
 Weights come from task_params.WEIGHTS; the maths from reward_math. IsaacLab's
 RewardManager.compute multiplies every term by weight * step_dt (checked in
@@ -125,6 +126,29 @@ def feet_air_time(
   return RM.air_time_spot(air, con, cmd, speed, mode_time_s, velocity_threshold_m_s)
 
 
+# --- body posture (IsaacLab velocity task / legged_gym standard terms) -------------
+# Same formulas as isaaclab.envs.mdp.{flat_orientation_l2, lin_vel_z_l2, ang_vel_xy_l2};
+# inputs cleaned and clamped because a PhysX blow-up step (truncated by
+# physics_unstable) still gets one reward and would square ~1e11 velocities.
+_VEL_CLAMP = 10.0
+
+
+def flat_orientation_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  """sum(projected_gravity_xy^2) = sin^2(tilt): body roll/pitch (legged_gym "orientation")."""
+  g = _finite(env.scene[asset_cfg.name].data.projected_gravity_b[:, :2])
+  return torch.sum(torch.square(g), dim=1)
+
+
+def lin_vel_z_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  v = torch.clamp(_finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, 2]), -_VEL_CLAMP, _VEL_CLAMP)
+  return torch.square(v)
+
+
+def ang_vel_xy_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  w = torch.clamp(_finite(env.scene[asset_cfg.name].data.root_link_ang_vel_b[:, :2]), -_VEL_CLAMP, _VEL_CLAMP)
+  return torch.sum(torch.square(w), dim=1)
+
+
 def forward_speed_m_s(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
   return _finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, 0])
 
@@ -202,6 +226,12 @@ class MicrotaurRewardsCfg:
     params={"sensor_cfg": feet_sensor_cfg(), "mode_time_s": AIR_TIME_MODE_S,
             "velocity_threshold_m_s": AIR_TIME_VELOCITY_THRESHOLD_M_S},
   )
+  # Body posture, off by default (weight 0). Standard values: flat_orientation_l2
+  # -2.5 (IsaacLab A1/Go1/Go2 flat) / -5.0 (ANYmal flat, legged_gym ANYmal-C flat);
+  # lin_vel_z_l2 -2.0 and ang_vel_xy_l2 -0.05 (legged_gym and IsaacLab defaults).
+  flat_orientation_l2 = RewardTermCfg(func=flat_orientation_l2, weight=0.0)
+  lin_vel_z_l2 = RewardTermCfg(func=lin_vel_z_l2, weight=0.0)
+  ang_vel_xy_l2 = RewardTermCfg(func=ang_vel_xy_l2, weight=0.0)
   metrics = RewardTermCfg(
     func=energy_speed_metrics, weight=1.0,
     params={"copper_w_per_nm2": XL330_COPPER_W_PER_NM2, "asset_cfg": legs_cfg()},
