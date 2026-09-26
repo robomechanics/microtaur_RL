@@ -14,8 +14,8 @@ IsaacLab vs mjlab:
     substep of the policy step. net_forces_w includes contacts with the robot's
     own links; the articulation must keep self-collisions disabled (as the
     MJCF's contype/conaffinity do) for this to mean "body touched terrain".
-  * base_too_low is relative to the env origin, as in mjlab; on generated
-    terrain the origin is the sub-terrain's spawn height.
+  * base_too_low: relative to the median height-scan hit under the body when a
+    height scanner exists (rough / teacher), else to the env origin (as mjlab).
   * physics_unstable (IsaacLab only): under a fresh policy's N(0,1) actions,
     GPU PhysX blows up about one env in 65k env-steps (root velocity NaN or
     ~1e12 while the root position stays finite, so no posture term fires).
@@ -55,8 +55,17 @@ UNSTABLE_ANG_VEL_RAD_S = 100.0
 def root_too_low(
   env: ManagerBasedRLEnv, min_height_m: float, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)
 ) -> torch.Tensor:
+  """Root height above the ground under the body < min_height_m. The ground is the
+  median height-scan hit when a height scanner exists (rough terrain: a low B cell
+  or the low side of C must not read as "too low"), else the env origin."""
   robot = env.scene[asset_cfg.name]
-  return robot.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2] < min_height_m
+  ground = env.scene.env_origins[:, 2]
+  sensors = getattr(env.scene, "sensors", {})
+  if "height_scanner" in sensors:
+    hz = sensors["height_scanner"].data.ray_hits_w[..., 2]
+    hz = torch.where(torch.isfinite(hz), hz, ground[:, None].expand_as(hz))
+    ground = torch.median(hz, dim=1).values
+  return robot.data.root_link_pos_w[:, 2] - ground < min_height_m
 
 
 def body_contact(env: ManagerBasedRLEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:

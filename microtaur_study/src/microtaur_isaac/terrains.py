@@ -168,7 +168,7 @@ def block_cell_heights(size: tuple[float, float], difficulty: float, cell_m: flo
 def blocks_terrain(difficulty: float, cfg: MicrotaurBlocksTerrainCfg) -> tuple[list[trimesh.Trimesh], np.ndarray]:
   """B: fixed Gaussian cell pattern, scaled by the level's difficulty."""
   d = level_difficulty(difficulty, cfg.num_levels)
-  h = block_cell_heights(cfg.size, d, cfg.cell_m, cfg.pattern_seed)
+  h = cfg.height_scale * block_cell_heights(cfg.size, d, cfg.cell_m, cfg.pattern_seed)
   mesh = _height_grid_mesh(h, (cfg.cell_m, cfg.cell_m), cfg.skirt_base_z)
   return [mesh], np.array([0.5 * cfg.size[0], 0.5 * cfg.size[1], 0.0])
 
@@ -214,6 +214,7 @@ class MicrotaurBlocksTerrainCfg(SubTerrainBaseCfg):
   function = blocks_terrain
   cell_m: float = CELL_M
   pattern_seed: int = B_PATTERN_SEED
+  height_scale: float = 1.0  # multiplies the whole map (1 = clip at 50% of the stance budget, 2 = 100%)
   num_levels: int | None = NUM_LEVELS  # None: use IsaacLab's continuous difficulty
   skirt_base_z: float = SKIRT_BASE_Z_M
 
@@ -250,6 +251,18 @@ MICROTAUR_TERRAINS_CFG = TerrainGeneratorCfg(
 """5 levels (rows, along x) x 10 columns (along y): columns 0-1 A, 2-6 B, 7-9 C."""
 
 
+def scaled_terrains_cfg(scale: float) -> TerrainGeneratorCfg:
+  """MICROTAUR_TERRAINS_CFG with B heights and the C step multiplied by `scale`
+  (2.0: B clipped at -15.2 / +21.6 mm with sigma 7.6 mm, C step 36.8 mm = 100% of the
+  stance-phase budget at the top level). Same layout, seed and B pattern."""
+  cfg = MICROTAUR_TERRAINS_CFG.copy()
+  subs = dict(cfg.sub_terrains)
+  subs["B_blocks"] = subs["B_blocks"].replace(height_scale=scale)
+  subs["C_step"] = subs["C_step"].replace(delta_m=C_DELTA_M * scale)
+  cfg.sub_terrains = subs
+  return cfg
+
+
 # ---------------------------------------------------------------- terrain type lookup
 def column_terrain_types(cfg: TerrainGeneratorCfg = MICROTAUR_TERRAINS_CFG) -> tuple[str, ...]:
   """Sub-terrain name per column, same rule as TerrainGenerator._generate_curriculum_terrains."""
@@ -279,5 +292,5 @@ __all__ = [
   "C_STEP_X_RANGE", "COLUMN_TERRAIN_TYPES", "COLUMN_TERRAIN_TYPE_IDS", "DOWN_MAX_M", "MICROTAUR_TERRAINS_CFG",
   "MicrotaurBlocksTerrainCfg", "MicrotaurFlatTerrainCfg", "MicrotaurStepTerrainCfg", "NUM_LEVELS", "SIGMA_M",
   "SKIRT_BASE_Z_M", "TILE_SIZE_M", "UP_MAX_M", "block_cell_heights", "column_terrain_types",
-  "env_terrain_type_ids", "level_difficulty",
+  "env_terrain_type_ids", "level_difficulty", "scaled_terrains_cfg",
 ]

@@ -46,11 +46,12 @@ FOOTPRINT_HALF_M = 0.13  # conservative half-size of the foot polygon at any hea
 _B_CELLS: dict[int, np.ndarray] = {}
 
 
-def _b_cells(level: int):
+def _b_cells(level: int, scale: float = 1.0):
   from . import terrains as TR
-  if level not in _B_CELLS:
-    _B_CELLS[level] = TR.block_cell_heights(TR.TILE_SIZE_M, level / (TR.NUM_LEVELS - 1))
-  return _B_CELLS[level]
+  key = (level, scale)
+  if key not in _B_CELLS:
+    _B_CELLS[key] = scale * TR.block_cell_heights(TR.TILE_SIZE_M, level / (TR.NUM_LEVELS - 1))
+  return _B_CELLS[key]
 
 
 def terrain_spawn(env, ids, xy, yaw):
@@ -73,9 +74,10 @@ def terrain_spawn(env, ids, xy, yaw):
     rand = torch.rand(nb, 2, device=xy.device, dtype=xy.dtype) * 2.0 - 1.0
     xy[is_b] = rand * torch.tensor((hx, hy), device=xy.device, dtype=xy.dtype)
     c = TR.CELL_M
+    scale = float(terrain.cfg.terrain_generator.sub_terrains["B_blocks"].height_scale)
     g = []
     for k, (p, lev) in enumerate(zip(xy[is_b].cpu().numpy(), levels[is_b].cpu().numpy())):
-      h = _b_cells(int(lev))
+      h = _b_cells(int(lev), scale)
       i0, i1 = (int(math.floor((p[0] + 0.5 * lx + s * FOOTPRINT_HALF_M) / c)) for s in (-1, 1))
       j0, j1 = (int(math.floor((p[1] + 0.5 * ly + s * FOOTPRINT_HALF_M) / c)) for s in (-1, 1))
       g.append(float(h[max(i0, 0):i1 + 1, max(j0, 0):j1 + 1].max()))
@@ -201,6 +203,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
   rough: bool = False
   teacher: bool = False
   play: bool = False
+  terrain_scale: float = 1.0  # rough only: B heights and the C step x this (terrains.scaled_terrains_cfg)
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=2048, env_spacing=0.5)
 
   def __post_init__(self):
@@ -213,9 +216,11 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
 
     if self.rough:
+      from . import terrains as TR
       from .terrains import MICROTAUR_TERRAINS_CFG
       self.scene.terrain.terrain_type = "generator"
-      self.scene.terrain.terrain_generator = MICROTAUR_TERRAINS_CFG
+      self.scene.terrain.terrain_generator = (MICROTAUR_TERRAINS_CFG if self.terrain_scale == 1.0 else
+                                              TR.scaled_terrains_cfg(self.terrain_scale))
       self.scene.terrain.max_init_terrain_level = 0
     if self.rough or self.teacher:
       # 12 x 9 = 108 values at 35 mm (two samples per 70 mm cell) for the teacher.
@@ -328,3 +333,15 @@ class MicrotaurTeacherHardEnvCfg(MicrotaurTeacherEnvCfg):
 class MicrotaurTeacherHardPlayEnvCfg(MicrotaurTeacherHardEnvCfg):
   play: bool = True
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
+
+
+@configclass
+class MicrotaurTeacherHard2xEnvCfg(MicrotaurTeacherHardEnvCfg):
+  """Teacher-Hard on terrain x2: every robot on level-4 B (-15.2 / +21.6 mm, sigma 7.6 mm)
+  or C (36.8 mm step), i.e. 100% of the stance-phase budget, no terrain curriculum."""
+  terrain_scale: float = 2.0
+
+
+@configclass
+class MicrotaurTeacherHard2xPlayEnvCfg(MicrotaurTeacherHardPlayEnvCfg):
+  terrain_scale: float = 2.0
