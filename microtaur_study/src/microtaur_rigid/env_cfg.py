@@ -30,7 +30,9 @@ PHYSICS_DT_S = 0.005
 DECIMATION = 4
 
 
-def make_env_cfg(*, play: bool = False, rough: bool = False, stage: int = 0) -> ManagerBasedRlEnvCfg:
+def make_env_cfg(
+  *, play: bool = False, rough: bool = False, stage: int = 0, energy_weight: float | None = None
+) -> ManagerBasedRlEnvCfg:
   s2r = STAGES[stage]
   cfg = make_velocity_env_cfg()
 
@@ -55,7 +57,7 @@ def make_env_cfg(*, play: bool = False, rough: bool = False, stage: int = 0) -> 
   configure_observations(cfg, s2r, rough=rough)
   validate_observation_contract(cfg, rough=rough)
   configure_commands(cfg, play=play)
-  configure_rewards(cfg)
+  configure_rewards(cfg, energy_weight=energy_weight)
   configure_terminations(cfg)
   configure_events(cfg, s2r, play=play, rough=rough)
 

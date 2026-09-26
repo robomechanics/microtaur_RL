@@ -43,10 +43,12 @@ bonus early in training, when forward tracking is ~0.
 from __future__ import annotations
 
 import torch
+from mjlab.envs import mdp as env_mdp
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
+from mjlab.managers.metrics_manager import MetricsTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.tasks.velocity import mdp
 
-from ._util import safe_log
 from .commands import COMMAND_NAME
 from .robot import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
 
@@ -55,6 +57,16 @@ GRAVITY = 9.81
 LIN_VEL_SIGMA_M_S = 0.10
 YAW_RATE_SIGMA_RAD_S = 0.15
 ENERGY_REF_SPEED_M_S = 0.15
+
+# Energy curriculum: the energy weight is 0 while PPO discovers walking, then
+# ramps linearly to its target. Pilot 3 (weight on from step 0) learned to walk
+# by iteration 100 and abandoned it by 200: for the first, inefficient gait,
+# walking gained +0.40 of tracking and cost 22.5 x weight of energy, so any
+# weight above ~0.018 made standing still optimal.
+ENERGY_WARMUP_ITERS = 200
+ENERGY_RAMP_ITERS = 300
+ENERGY_RAMP_STAGES = 10
+STEPS_PER_ITER = 32  # rl_cfg num_steps_per_env; common_step_counter counts these
 
 WEIGHTS = {
   "track_lin_vel_xy": 1.0,
@@ -94,17 +106,36 @@ def motor_power_w(env, copper_w_per_nm2: float) -> tuple[torch.Tensor, torch.Ten
 
 def motor_energy(env, copper_w_per_nm2: float, mass_kg: float, ref_speed_m_s: float) -> torch.Tensor:
   mech, copper = motor_power_w(env, copper_w_per_nm2)
-  total = mech + copper
-  safe_log(env, "Metrics/energy/mechanical_w", mech.mean())
-  safe_log(env, "Metrics/energy/copper_w", copper.mean())
-  vx = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
-  moving = vx > 0.05
-  if torch.any(moving):
-    safe_log(env, "Metrics/energy/electrical_cot", (total[moving] / (mass_kg * GRAVITY * vx[moving])).mean())
-  return total / (mass_kg * GRAVITY * ref_speed_m_s)
+  return (mech + copper) / (mass_kg * GRAVITY * ref_speed_m_s)
 
 
-def configure_rewards(cfg) -> None:
+# Metrics are computed every step whatever the reward weight is (a reward term
+# with weight 0 is skipped by mjlab), so energy stays visible during warm-up.
+def mechanical_power_w(env, copper_w_per_nm2: float) -> torch.Tensor:
+  return motor_power_w(env, copper_w_per_nm2)[0]
+
+
+def copper_power_w(env, copper_w_per_nm2: float) -> torch.Tensor:
+  return motor_power_w(env, copper_w_per_nm2)[1]
+
+
+def forward_speed_m_s(env) -> torch.Tensor:
+  return env.scene["robot"].data.root_link_lin_vel_b[:, 0]
+
+
+def energy_weight_stages(target: float) -> list[dict]:
+  """0 for ENERGY_WARMUP_ITERS, then a linear ramp to `target` in equal steps."""
+  stages = [{"step": 0, "weight": 0.0}]
+  for k in range(1, ENERGY_RAMP_STAGES + 1):
+    it = ENERGY_WARMUP_ITERS + ENERGY_RAMP_ITERS * k / ENERGY_RAMP_STAGES
+    stages.append({"step": int(it * STEPS_PER_ITER), "weight": target * k / ENERGY_RAMP_STAGES})
+  return stages
+
+
+def configure_rewards(cfg, energy_weight: float | None = None) -> None:
+  """energy_weight is the curriculum's final value (default WEIGHTS['motor_energy'])."""
+  if energy_weight is None:
+    energy_weight = WEIGHTS["motor_energy"]
   cfg.rewards.clear()
   cfg.rewards["track_lin_vel_xy"] = RewardTermCfg(
     func=track_lin_vel_xy, weight=WEIGHTS["track_lin_vel_xy"],
@@ -115,7 +146,7 @@ def configure_rewards(cfg) -> None:
     params={"command_name": COMMAND_NAME, "sigma": YAW_RATE_SIGMA_RAD_S},
   )
   cfg.rewards["motor_energy"] = RewardTermCfg(
-    func=motor_energy, weight=WEIGHTS["motor_energy"],
+    func=motor_energy, weight=0.0,  # set by the energy curriculum
     params={
       "copper_w_per_nm2": XL330_COPPER_W_PER_NM2,
       "mass_kg": EXPECTED_TOTAL_MASS_KG,
@@ -124,3 +155,12 @@ def configure_rewards(cfg) -> None:
   )
   cfg.rewards["action_rate"] = RewardTermCfg(func=mdp.action_rate_l2, weight=WEIGHTS["action_rate"])
   cfg.rewards["termination"] = RewardTermCfg(func=mdp.is_terminated, weight=WEIGHTS["termination"])
+
+  cfg.curriculum["energy_weight"] = CurriculumTermCfg(
+    func=env_mdp.reward_curriculum,
+    params={"reward_name": "motor_energy", "stages": energy_weight_stages(energy_weight)},
+  )
+  cu = {"copper_w_per_nm2": XL330_COPPER_W_PER_NM2}
+  cfg.metrics["mechanical_power_w"] = MetricsTermCfg(func=mechanical_power_w, params=cu)
+  cfg.metrics["copper_power_w"] = MetricsTermCfg(func=copper_power_w, params=cu)
+  cfg.metrics["forward_speed_m_s"] = MetricsTermCfg(func=forward_speed_m_s)

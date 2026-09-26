@@ -33,6 +33,11 @@ N = 64
 cfg = make_env_cfg()
 cfg.scene.num_envs = N
 cfg.seed = 0
+# The energy curriculum starts the weight at 0 and would reset it on every env
+# reset; remove it and pin the final weight so the manager check below has a
+# nonzero weight to divide by.
+cfg.curriculum.pop("energy_weight")
+cfg.rewards["motor_energy"].weight = R.WEIGHTS["motor_energy"]
 env = ManagerBasedRlEnv(cfg, device=DEV)
 env.reset()
 robot = env.scene["robot"]
