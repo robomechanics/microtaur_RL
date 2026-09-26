@@ -7,6 +7,7 @@ termination penalty and a trot-gait kernel. Port of microtaur_rigid/rewards.py.
       - 0.05/8 * sum_j (a_j - a_j,prev)^2                   action_rate
       - 2.0/dt per non-timeout termination                  termination
       + 2.0   * trot kernel (Spot GaitReward)               trot_gait
+      + w_A   * Spot air_time_reward (phase durations)      feet_air_time (0 = off by default)
 
 Weights come from task_params.WEIGHTS; the maths from reward_math. IsaacLab's
 RewardManager.compute multiplies every term by weight * step_dt (checked in
@@ -56,7 +57,7 @@ from isaaclab.utils import configclass
 from microtaur_common import reward_math as RM
 from microtaur_common.robot_constants import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
 from microtaur_common.task_params import (  # noqa: F401  (re-exported)
-  COMMAND_NAME, ENERGY_REF_SPEED_M_S, GAIT_MAX_ERR_S, GAIT_STD_S2, GRAVITY, LIN_VEL_SIGMA_M_S, TROT_PAIRS,
+  AIR_TIME_MODE_S, AIR_TIME_VELOCITY_THRESHOLD_M_S, AIR_TIME_WEIGHT, COMMAND_NAME, ENERGY_REF_SPEED_M_S, GAIT_MAX_ERR_S, GAIT_STD_S2, GRAVITY, LIN_VEL_SIGMA_M_S, TROT_PAIRS,
   WEIGHTS, YAW_RATE_SIGMA_RAD_S, energy_weight_stages,
 )
 
@@ -110,6 +111,18 @@ def motor_energy(
 def trot_gait(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, pairs, std: float, max_err: float) -> torch.Tensor:
   _, air, con = foot_contact_timers(env, sensor_cfg)
   return RM.trot_gait(air, con, pairs, std, max_err)
+
+
+def feet_air_time(
+  env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, mode_time_s: float, velocity_threshold_m_s: float,
+  command_name: str = COMMAND_NAME, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT),
+) -> torch.Tensor:
+  """IsaacLab Spot air_time_reward on the policy-step contact timers of mdp.contact
+  (Spot reads the sensor's timers, which flicker here; see contact.py)."""
+  _, air, con = foot_contact_timers(env, sensor_cfg)
+  cmd = torch.linalg.norm(env.command_manager.get_command(command_name), dim=1)
+  speed = torch.linalg.norm(_finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, :2]), dim=1)
+  return RM.air_time_spot(air, con, cmd, speed, mode_time_s, velocity_threshold_m_s)
 
 
 def forward_speed_m_s(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
@@ -183,6 +196,11 @@ class MicrotaurRewardsCfg:
   trot_gait = RewardTermCfg(
     func=trot_gait, weight=WEIGHTS["trot_gait"],
     params={"sensor_cfg": feet_sensor_cfg(), "pairs": TROT_PAIRS, "std": GAIT_STD_S2, "max_err": GAIT_MAX_ERR_S},
+  )
+  feet_air_time = RewardTermCfg(
+    func=feet_air_time, weight=AIR_TIME_WEIGHT,
+    params={"sensor_cfg": feet_sensor_cfg(), "mode_time_s": AIR_TIME_MODE_S,
+            "velocity_threshold_m_s": AIR_TIME_VELOCITY_THRESHOLD_M_S},
   )
   metrics = RewardTermCfg(
     func=energy_speed_metrics, weight=1.0,

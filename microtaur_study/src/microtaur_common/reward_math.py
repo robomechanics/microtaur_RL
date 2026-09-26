@@ -46,3 +46,21 @@ def trot_gait(air: torch.Tensor, contact: torch.Tensor, pairs, std: float, max_e
 
   (a0, a1), (b0, b1) = pairs
   return sync(a0, a1) * sync(b0, b1) * anti(a0, b0) * anti(a1, b1) * anti(a0, b1) * anti(b0, a1)
+
+
+def air_time_spot(air: torch.Tensor, contact: torch.Tensor, cmd_norm: torch.Tensor, body_speed: torch.Tensor,
+                  mode_time_s: float, velocity_threshold_m_s: float) -> torch.Tensor:
+  """IsaacLab Spot's air_time_reward (config/spot/mdp/rewards.py), on running
+  air / contact times [N, F]; cmd_norm, body_speed [N]. Summed over feet.
+
+  Moving (command > 0 or body faster than the threshold): each foot earns the
+  duration of its current phase (air or contact), capped at mode_time, and 0
+  once that phase has lasted longer than mode_time -> every swing and stance
+  is pushed toward mode_time (period ~2 x mode_time); short taps earn little.
+  Not moving: clip(contact - air, +-mode_time) (reward standing still)."""
+  t_max = torch.maximum(air, contact)
+  t_min = torch.clamp(t_max, max=mode_time_s)
+  stance = torch.clamp(contact - air, -mode_time_s, mode_time_s)
+  moving = ((cmd_norm > 0.0) | (body_speed > velocity_threshold_m_s))[:, None]
+  reward = torch.where(moving, torch.where(t_max < mode_time_s, t_min, torch.zeros_like(t_min)), stance)
+  return torch.sum(reward, dim=1)

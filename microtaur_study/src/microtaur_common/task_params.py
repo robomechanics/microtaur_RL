@@ -67,6 +67,15 @@ TROT_PAIRS = ((0, 2), (1, 3))
 # IsaacLab Spot uses std 0.1 s^2 and max_err 0.2 s for a 0.3 s air-time target.
 # Microtaur's target is ~0.15 s (upstream AIR_TIME_TARGET_S), half the time
 # scale, so the squared-time std is quartered and the clip halved.
+# IsaacLab Spot air_time_reward: the second gait-shaping term next to the trot
+# GaitReward (which sets the diagonal pairing but not the period). Approved by
+# the user on 2026-09-26. Spot uses mode_time 0.3 s, velocity_threshold 0.5 m/s,
+# weight 5 next to gait 10 (1:2); here commands are never zero, so the threshold
+# only matters for a standing command. Off by default (weight 0). Not in
+# WEIGHTS: the mjlab env has no such term yet.
+AIR_TIME_MODE_S = 0.3
+AIR_TIME_VELOCITY_THRESHOLD_M_S = 0.05
+AIR_TIME_WEIGHT = 0.0
 GAIT_STD_S2 = 0.1 / 4
 GAIT_MAX_ERR_S = 0.2 / 2
 
