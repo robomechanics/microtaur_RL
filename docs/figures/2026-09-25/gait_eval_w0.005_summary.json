@@ -1,0 +1,290 @@
+{
+ "checkpoint": "/home/rml3/Documents/ben/spine/runs_local/microtaur_rigid_d0/2026-09-25_20-58-59_energy_sweep_w0.005/model_699.pt",
+ "speeds": {
+  "0.10": {
+   "cmd_m_s": 0.1,
+   "speed_m_s": 0.1019834354519844,
+   "speed_ratio": 1.019834280014038,
+   "speed_env_min_max": [
+    0.0983719751238823,
+    0.10546133667230606
+   ],
+   "lateral_m_s_rms": 0.015354926697909832,
+   "yaw_rate_rad_s_rms": 0.04404604807496071,
+   "resets_during_measure": 0,
+   "duty_factor": [
+    0.729,
+    0.425,
+    0.718,
+    0.152
+   ],
+   "stride_hz": 4.545454545454546,
+   "touchdown_phase_vs_leg1": [
+    0.0,
+    0.889,
+    0.012,
+    0.949
+   ],
+   "gait": "irregular (closest trot, score 0.46)",
+   "swing_clearance_p95_mm": [
+    9.4,
+    7.2,
+    8.0,
+    23.7
+   ],
+   "body_height_mm": [
+    84.69129180908203,
+    5.6616644859313965
+   ],
+   "roll_pitch_std_deg": [
+    0.737303614616394,
+    1.188383936882019
+   ],
+   "motor_travel_p95_frac_of_limit": [
+    0.63,
+    0.44,
+    0.75,
+    0.23,
+    0.73,
+    0.34,
+    0.79,
+    0.78
+   ],
+   "tracking_err_rms_deg": 10.708847999572754,
+   "tracking_err_p95_deg": 26.748573303222656,
+   "torque_saturated_frac": 0.26104166666666667,
+   "torque_rms_nm": 0.08632074296474457,
+   "power_mech_w": 1.9641691446304321,
+   "power_copper_w": 9.47830581665039,
+   "electrical_cot": 21.18008041381836
+  },
+  "0.15": {
+   "cmd_m_s": 0.15,
+   "speed_m_s": 0.1493120938539505,
+   "speed_ratio": 0.9954138994216919,
+   "speed_env_min_max": [
+    0.14881598949432373,
+    0.14966344833374023
+   ],
+   "lateral_m_s_rms": 0.010251968167722225,
+   "yaw_rate_rad_s_rms": 0.037666358053684235,
+   "resets_during_measure": 0,
+   "duty_factor": [
+    0.7,
+    0.358,
+    0.7,
+    0.2
+   ],
+   "stride_hz": 5.0,
+   "touchdown_phase_vs_leg1": [
+    0.0,
+    0.015,
+    0.0,
+    0.9
+   ],
+   "gait": "irregular (closest trot, score 0.60)",
+   "swing_clearance_p95_mm": [
+    7.9,
+    6.0,
+    6.5,
+    20.0
+   ],
+   "body_height_mm": [
+    87.4811782836914,
+    5.165678977966309
+   ],
+   "roll_pitch_std_deg": [
+    0.35196027159690857,
+    0.5959851741790771
+   ],
+   "motor_travel_p95_frac_of_limit": [
+    0.62,
+    0.72,
+    0.77,
+    0.32,
+    0.76,
+    0.28,
+    0.76,
+    0.75
+   ],
+   "tracking_err_rms_deg": 10.624052047729492,
+   "tracking_err_p95_deg": 25.844802856445312,
+   "torque_saturated_frac": 0.2697395833333333,
+   "torque_rms_nm": 0.08823583275079727,
+   "power_mech_w": 2.0147087574005127,
+   "power_copper_w": 9.903538703918457,
+   "electrical_cot": 15.067965507507324
+  },
+  "0.20": {
+   "cmd_m_s": 0.2,
+   "speed_m_s": 0.17112131416797638,
+   "speed_ratio": 0.8556065559387207,
+   "speed_env_min_max": [
+    0.16712921857833862,
+    0.17623211443424225
+   ],
+   "lateral_m_s_rms": 0.01194812823086977,
+   "yaw_rate_rad_s_rms": 0.06920288503170013,
+   "resets_during_measure": 0,
+   "duty_factor": [
+    0.699,
+    0.33,
+    0.694,
+    0.259
+   ],
+   "stride_hz": 5.0,
+   "touchdown_phase_vs_leg1": [
+    0.0,
+    0.035,
+    0.003,
+    0.854
+   ],
+   "gait": "irregular (closest pace, score 0.64)",
+   "swing_clearance_p95_mm": [
+    9.3,
+    14.0,
+    7.7,
+    21.7
+   ],
+   "body_height_mm": [
+    87.49881744384766,
+    5.225947856903076
+   ],
+   "roll_pitch_std_deg": [
+    1.099421501159668,
+    1.4187076091766357
+   ],
+   "motor_travel_p95_frac_of_limit": [
+    0.64,
+    0.72,
+    0.75,
+    0.44,
+    0.79,
+    0.42,
+    0.83,
+    0.73
+   ],
+   "tracking_err_rms_deg": 10.4871826171875,
+   "tracking_err_p95_deg": 23.430496215820312,
+   "torque_saturated_frac": 0.35833333333333334,
+   "torque_rms_nm": 0.09412028640508652,
+   "power_mech_w": 2.507387399673462,
+   "power_copper_w": 11.268518447875977,
+   "electrical_cot": 15.196839332580566
+  },
+  "0.25": {
+   "cmd_m_s": 0.25,
+   "speed_m_s": 0.17327550053596497,
+   "speed_ratio": 0.6931020021438599,
+   "speed_env_min_max": [
+    0.1450299769639969,
+    0.19980882108211517
+   ],
+   "lateral_m_s_rms": 0.027630053460597992,
+   "yaw_rate_rad_s_rms": 0.16933223605155945,
+   "resets_during_measure": 0,
+   "duty_factor": [
+    0.683,
+    0.459,
+    0.655,
+    0.331
+   ],
+   "stride_hz": 5.0,
+   "touchdown_phase_vs_leg1": [
+    0.0,
+    0.07,
+    0.051,
+    0.841
+   ],
+   "gait": "irregular (closest pace, score 0.61)",
+   "swing_clearance_p95_mm": [
+    11.5,
+    17.2,
+    18.3,
+    28.4
+   ],
+   "body_height_mm": [
+    86.87244415283203,
+    5.420896530151367
+   ],
+   "roll_pitch_std_deg": [
+    3.284353494644165,
+    3.0778746604919434
+   ],
+   "motor_travel_p95_frac_of_limit": [
+    0.65,
+    0.76,
+    0.7,
+    0.7,
+    0.83,
+    0.56,
+    0.83,
+    0.77
+   ],
+   "tracking_err_rms_deg": 10.702054023742676,
+   "tracking_err_p95_deg": 23.374380111694336,
+   "torque_saturated_frac": 0.36786458333333333,
+   "torque_rms_nm": 0.09439729154109955,
+   "power_mech_w": 2.885913372039795,
+   "power_copper_w": 11.334946632385254,
+   "electrical_cot": 15.492657661437988
+  },
+  "0.30": {
+   "cmd_m_s": 0.3,
+   "speed_m_s": 0.13746492564678192,
+   "speed_ratio": 0.4582163989543915,
+   "speed_env_min_max": [
+    0.08728525787591934,
+    0.16608452796936035
+   ],
+   "lateral_m_s_rms": 0.04255981370806694,
+   "yaw_rate_rad_s_rms": 0.2482483685016632,
+   "resets_during_measure": 0,
+   "duty_factor": [
+    0.59,
+    0.624,
+    0.657,
+    0.295
+   ],
+   "stride_hz": 5.902777777777778,
+   "touchdown_phase_vs_leg1": [
+    0.0,
+    0.193,
+    0.069,
+    0.849
+   ],
+   "gait": "irregular (closest pace, score 0.58)",
+   "swing_clearance_p95_mm": [
+    20.7,
+    12.7,
+    17.5,
+    35.7
+   ],
+   "body_height_mm": [
+    83.67771911621094,
+    6.578869342803955
+   ],
+   "roll_pitch_std_deg": [
+    5.306779861450195,
+    3.313197374343872
+   ],
+   "motor_travel_p95_frac_of_limit": [
+    0.69,
+    0.76,
+    0.85,
+    0.74,
+    0.77,
+    0.61,
+    0.83,
+    0.8
+   ],
+   "tracking_err_rms_deg": 11.75283432006836,
+   "tracking_err_p95_deg": 25.800004959106445,
+   "torque_saturated_frac": 0.37252604166666664,
+   "torque_rms_nm": 0.0935627743601799,
+   "power_mech_w": 3.093212366104126,
+   "power_copper_w": 11.135419845581055,
+   "electrical_cot": 19.539276123046875
+  }
+ }
+}
