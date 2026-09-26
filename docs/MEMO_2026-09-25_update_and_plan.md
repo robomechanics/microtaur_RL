@@ -149,7 +149,7 @@ in once walking is established.
 ## 5. Open concerns
 
 1. **Spike at kd = 0** not yet run (09-20 uses kd = 0; less damping may raise closure spikes and jitter).
-2. **`frictionloss` has no PhysX mapping** (constant N·m vs PhysX's unitless coefficient); 0.010 N·m is 7.8% of the effort limit.
+2. ~~`frictionloss` has no PhysX mapping.~~ **Corrected:** on Isaac Sim 5.0 actuator `friction` is a constant torque; measured threshold 0.009–0.011 N·m for a 0.010 setting and 0.019–0.021 for 0.020 (`tools/spike_isaac_joint_friction.py`, CPU PhysX). The XML values carry over directly.
 3. **Contact-model sim2sim gap** (+13% speed, +4.5 mm height in PhysX).
 4. **Copper-loss constant** is datasheet-derived with a 17% internal inconsistency.
 5. **Reward terms read body quantities one physics substep stale** — mjlab calls `forward()` only before observations. Documented mjlab behaviour, same for upstream; relevant when reading logs.

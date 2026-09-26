@@ -89,9 +89,16 @@ Also established:
   reference. The conversion is faithful at least in the static pose.
 - The model the spike used differs from the 09-20 XML by at most **5e-9 m**, so
   its stand / trot / drop conclusions carry over to the new model unchanged.
-- **`frictionloss` still has no PhysX mapping.** It is 1.0e-2 N·m on the actuated
-  joints and 1.0e-3 on the passive ones, and it is not a rounding detail on a
-  0.129 N·m effort limit — 1.0e-2 is 7.8% of it.
+- **`frictionloss` does map, on Isaac Sim 5.0** (corrected 2026-09-25; an
+  earlier version of this list said it did not). IsaacLab documents actuator
+  `friction` as a unitless coefficient on Isaac Sim 4.5 but as an effort from
+  5.0, and `tools/spike_isaac_joint_friction.py` measures it on the installed
+  5.0: with `friction = 0.010` a joint holds under 0.009 N·m and slips at
+  0.011; with `0.020` it holds up to 0.015 and slips fully at 0.021 (partly at
+  0.019). So `friction` is a constant Coulomb torque like MuJoCo's
+  `frictionloss`, to within ~5%, and the XML values carry over directly
+  (1.0e-2 N·m actuated, 1.0e-3 passive). Measured on CPU PhysX (the GPU was
+  full); not re-checked on GPU PhysX.
 - Contact-model differences between the two engines still need calibrating, and
   the contact sensor still has to be rewritten (§3).
 - The environment builds and runs: actor 33-dim, critic 60-dim, total mass
