@@ -24,7 +24,12 @@ from __future__ import annotations
 
 import numpy as np
 
-DX_M = 0.010  # heightfield sample spacing: 7 samples per 70 mm cell -> flat tops
+# Heightfield sample spacing. A heightfield interpolates linearly between
+# samples, so every cell edge is a ramp one sample wide. Adjacent cells differ
+# by only 6.3 mm at the median, so at 10 mm spacing the median edge was a 32 deg
+# slope (71% of edges gentler than 45 deg). At 2.5 mm the median edge is 68 deg
+# and the ramp is narrower than the 6.2 mm foot radius.
+DX_M = 0.0025
 CELL_M = 0.070
 UP_MAX_M = 0.0131  # 50% of retract (26.22 mm) at the stand pose
 DOWN_MAX_M = 0.0164  # 50% of extend (32.86 mm) at the stand pose

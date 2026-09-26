@@ -32,8 +32,8 @@ out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 
 BODY = (0.170, 0.105)  # fore-aft x lateral foot spacing, m
-NX_B, NY_B = 400, 400  # 4 x 4 m
-NX_C, NY_C = 400, 200  # 4 x 2 m
+NX_B, NY_B = 1600, 1600  # 4 x 4 m at 2.5 mm
+NX_C, NY_C = 1600, 800  # 4 x 2 m at 2.5 mm
 B = T.gaussian_blocks(NX_B, NY_B, difficulty=1.0, seed=0)
 C = T.flat_step_flat(NX_C, NY_C, difficulty=1.0)
 A = T.flat(NX_B, NY_B)
@@ -61,7 +61,7 @@ fig.colorbar(im, ax=axs[0].tolist(), label="height [mm]", shrink=0.8)
 
 # Zoomed B with cell grid
 ax = axs[1][0]
-zoom = B[150:250, 150:250]
+zoom = B[600:1000, 600:1000]
 ax.imshow(1e3 * zoom.T, origin="lower", extent=[1.5, 2.5, -0.5, 0.5], cmap="RdBu_r", vmin=-vmax, vmax=vmax)
 footprint(ax, 2.0, 0.0)
 ax.set_title("B zoom 1 x 1 m: 70 mm flat-topped cells")
@@ -144,7 +144,8 @@ def render(z: np.ndarray, spawn_xy: tuple[float, float], name: str, cam: dict):
   m.opt.timestep = 0.005
   d = mujoco.MjData(m)
   ix, iy = int(spawn_xy[0] / T.DX_M), int(spawn_xy[1] / T.DX_M + ny / 2)
-  ground = float(z[ix - 9: ix + 9, iy - 6: iy + 6].max())
+  hx, hy = int(0.09 / T.DX_M), int(0.06 / T.DX_M)
+  ground = float(z[ix - hx: ix + hx, iy - hy: iy + hy].max())
   d.qpos[0:7] = (spawn_xy[0], spawn_xy[1], ground + 0.075, 1, 0, 0, 0)
   qadr = [m.joint(n).qposadr[0] for n in FULL_NAMES]
   d.qpos[qadr] = FULL_Q
@@ -163,8 +164,13 @@ def render(z: np.ndarray, spawn_xy: tuple[float, float], name: str, cam: dict):
   opt = mujoco.MjvOption()
   r.update_scene(d, camera=c, scene_option=opt)
   plt.imsave(out / f"render_{name}.png", r.render())
-  print("wrote", out / f"render_{name}.png", f"(root z {d.qpos[2]:.4f} m, local ground max {ground * 1e3:+.1f} mm)")
+  feet = {f"leg{i}": d.site_xpos[m.site(f"leg{i}_foot_site").id] for i in range(1, 5)}
+  desc = "  ".join(f"{k}(x {p[0]:.2f}, y {p[1]:+.3f}) z {1e3 * (p[2] - 0.0062):+5.1f}mm" for k, p in feet.items())
+  print("wrote", out / f"render_{name}.png", f"root z {d.qpos[2]:.4f} m | foot-bottom heights: {desc}")
 
 
-render(B[100:300, 100:300], (1.0, 0.0), "B", {"distance": 0.75, "azimuth": 140, "elevation": -28})
-render(C[0:250, 50:150], (0.9, 0.0), "C", {"distance": 0.9, "azimuth": 200, "elevation": -22})
+render(B[400:1200, 400:1200], (1.0, 0.0), "B", {"distance": 0.75, "azimuth": 140, "elevation": -28})
+# C at three points along the course: still on the approach, front feet just
+# onto the step, fully on the step. Left (+y) half is high, right half low.
+for label, x in (("C_approach", 0.85), ("C_entry", 1.05), ("C_mid", 2.0)):
+  render(C, (x, 0.0), label, {"distance": 0.55, "azimuth": 180, "elevation": -12})
