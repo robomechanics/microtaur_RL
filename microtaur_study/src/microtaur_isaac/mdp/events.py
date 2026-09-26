@@ -64,7 +64,11 @@ def ik_consistent_reset(env, env_ids, randomize: bool, spawn_fn=None) -> None:
   zeros = torch.zeros_like(yaw)
   quat = quat_from_euler_xyz(zeros, zeros, yaw)
   robot.write_root_pose_to_sim(torch.cat([pos, quat], dim=-1), env_ids=ids)
-  robot.write_root_velocity_to_sim(torch.zeros(n, 6, device=dev), env_ids=ids)
+  # write_root_velocity_to_sim (the CoM version) leaves the cached
+  # data.root_link_vel_w of this step stale, so the reset observation would
+  # carry the previous episode's velocity (NaN after a solver blow-up); the
+  # link version updates both buffers.
+  robot.write_root_link_velocity_to_sim(torch.zeros(n, 6, device=dev), env_ids=ids)
   robot.write_joint_state_to_sim(r["full_q"], torch.zeros_like(r["full_q"]), joint_ids=full_ids, env_ids=ids)
   # Seed motor targets from the reset pose so the first delayed command does
   # not pull the mechanism away.

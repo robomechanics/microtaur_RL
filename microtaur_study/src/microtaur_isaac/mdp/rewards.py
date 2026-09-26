@@ -30,6 +30,9 @@ IsaacLab vs mjlab:
     updates them when the sensor updates; with history_length > 0 it updates
     every physics substep (like mjlab), with history_length = 0 only when read
     (once per policy step). Contact = |net force| > sensor cfg.force_threshold.
+  * finite inputs: an env whose PhysX state blew up (terminations.physics_unstable)
+    still gets one reward before its reset; the simulator quantities read here
+    pass through _finite() so that reward, and the metric sums, stay finite.
   * metrics: IsaacLab has no metrics manager. energy_speed_metrics is a reward
     term that returns zeros (weight 1, so the manager does not skip it),
     accumulates per-step mechanical / copper power and forward speed, and on
@@ -61,11 +64,15 @@ if TYPE_CHECKING:
   from isaaclab.envs import ManagerBasedRLEnv
 
 
+def _finite(x: torch.Tensor) -> torch.Tensor:
+  return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+
+
 def track_lin_vel_xy(
   env: ManagerBasedRLEnv, command_name: str, sigma: float, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)
 ) -> torch.Tensor:
   return RM.lin_vel_tracking(
-    env.command_manager.get_command(command_name), env.scene[asset_cfg.name].data.root_link_lin_vel_b, sigma
+    env.command_manager.get_command(command_name), _finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b), sigma
   )
 
 
@@ -73,7 +80,7 @@ def track_ang_vel_z(
   env: ManagerBasedRLEnv, command_name: str, sigma: float, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)
 ) -> torch.Tensor:
   return RM.yaw_rate_tracking(
-    env.command_manager.get_command(command_name), env.scene[asset_cfg.name].data.root_link_ang_vel_b, sigma
+    env.command_manager.get_command(command_name), _finite(env.scene[asset_cfg.name].data.root_link_ang_vel_b), sigma
   )
 
 
@@ -84,7 +91,7 @@ def motor_power_w(
   (the 8 motors). Torque = applied_torque (after the DC-motor clip)."""
   d = env.scene[asset_cfg.name].data
   ids = asset_cfg.joint_ids
-  return RM.motor_power(d.applied_torque[:, ids], d.joint_vel[:, ids], copper_w_per_nm2)
+  return RM.motor_power(_finite(d.applied_torque[:, ids]), _finite(d.joint_vel[:, ids]), copper_w_per_nm2)
 
 
 def motor_energy(
@@ -103,7 +110,7 @@ def trot_gait(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, pairs, std: fl
 
 
 def forward_speed_m_s(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
-  return env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, 0]
+  return _finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, 0])
 
 
 METRIC_NAMES = ("mechanical_power_w", "copper_power_w", "forward_speed_m_s")

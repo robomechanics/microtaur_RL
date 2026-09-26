@@ -16,6 +16,12 @@ IsaacLab vs mjlab:
     MJCF's contype/conaffinity do) for this to mean "body touched terrain".
   * base_too_low is relative to the env origin, as in mjlab; on generated
     terrain the origin is the sub-terrain's spawn height.
+  * physics_unstable (IsaacLab only): under a fresh policy's N(0,1) actions,
+    GPU PhysX blows up about one env in 65k env-steps (root velocity NaN or
+    ~1e12 while the root position stays finite, so no posture term fires).
+    Such an env is truncated (time_out=True: no termination penalty, the
+    solver's fault rather than the policy's) and reset before observations
+    are computed; its last reward is cleaned in rewards.py.
 """
 
 from __future__ import annotations
@@ -41,6 +47,9 @@ if TYPE_CHECKING:
 # zero-force proximity contacts.
 BODY_CONTACT_FORCE_N = 0.05
 OUT_OF_BOUNDS_MARGIN_M = 0.3
+# Far above anything physical for a 0.54 kg robot 7 cm tall.
+UNSTABLE_LIN_VEL_M_S = 5.0
+UNSTABLE_ANG_VEL_RAD_S = 100.0
 
 
 def root_too_low(
@@ -78,6 +87,18 @@ def out_of_terrain_bounds(
   return (xy[:, 0].abs() > limit_x) | (xy[:, 1].abs() > limit_y)
 
 
+def physics_unstable(
+  env: ManagerBasedRLEnv, max_lin_vel: float, max_ang_vel: float, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)
+) -> torch.Tensor:
+  d = env.scene[asset_cfg.name].data
+  state = torch.cat((d.root_link_pos_w, d.root_link_quat_w, d.root_link_lin_vel_w, d.root_link_ang_vel_w,
+                     d.joint_pos, d.joint_vel), dim=1)
+  bad = ~torch.isfinite(state).all(dim=1)
+  lin = torch.nan_to_num(torch.linalg.norm(d.root_link_lin_vel_w, dim=1), nan=0.0)
+  ang = torch.nan_to_num(torch.linalg.norm(d.root_link_ang_vel_w, dim=1), nan=0.0)
+  return bad | (lin > max_lin_vel) | (ang > max_ang_vel)
+
+
 @configclass
 class MicrotaurTerminationsCfg:
   time_out = DoneTerm(func=il_mdp.time_out, time_out=True)
@@ -88,6 +109,10 @@ class MicrotaurTerminationsCfg:
   )
   base_too_low = DoneTerm(func=root_too_low, params={"min_height_m": MIN_ROOT_HEIGHT_M})
   out_of_terrain_bounds = DoneTerm(func=out_of_terrain_bounds, time_out=True)
+  physics_unstable = DoneTerm(
+    func=physics_unstable, time_out=True,
+    params={"max_lin_vel": UNSTABLE_LIN_VEL_M_S, "max_ang_vel": UNSTABLE_ANG_VEL_RAD_S},
+  )
 
 
 def make_terminations_cfg() -> MicrotaurTerminationsCfg:
