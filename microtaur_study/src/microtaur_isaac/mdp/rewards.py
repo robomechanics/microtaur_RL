@@ -61,6 +61,7 @@ from microtaur_common.task_params import (  # noqa: F401  (re-exported)
 )
 
 from .contact import foot_contact_timers
+from .terminations import UNSTABLE_ANG_VEL_RAD_S, UNSTABLE_LIN_VEL_M_S, physics_unstable
 from .observations import ROBOT, feet_sensor_cfg, legs_cfg
 
 if TYPE_CHECKING:
@@ -151,8 +152,10 @@ class energy_speed_metrics(ManagerTermBase):
   ) -> torch.Tensor:
     mech, copper = motor_power_w(env, copper_w_per_nm2, asset_cfg)
     self.last = torch.stack((mech, copper, forward_speed_m_s(env)), dim=1)
-    self._sums += self.last
-    self._count += 1.0
+    # A step whose PhysX state blew up (finite but ~1e11 velocities) is left out.
+    ok = ~physics_unstable(env, UNSTABLE_LIN_VEL_M_S, UNSTABLE_ANG_VEL_RAD_S)
+    self._sums += torch.where(ok[:, None], self.last, torch.zeros_like(self.last))
+    self._count += ok.float()
     return torch.zeros(env.num_envs, device=env.device)
 
 
