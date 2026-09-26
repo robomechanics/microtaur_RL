@@ -104,6 +104,8 @@ def build_usd(out_path: str, visuals: bool = False) -> dict:
     if gtype == int(mujoco.mjtGeom.mjGEOM_BOX):
       geom.AddScaleOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Vec3d(*map(float, m.geom_size[g])))
     UsdPhysics.CollisionAPI.Apply(geom.GetPrim())
+    if visuals:
+      geom.MakeInvisible()  # the boxes would hide the visual meshes; PhysX ignores visibility
     UsdShade.MaterialBindingAPI.Apply(geom.GetPrim()).Bind(
       material(float(m.geom_friction[g][0])), UsdShade.Tokens.weakerThanDescendants, "physics"
     )
