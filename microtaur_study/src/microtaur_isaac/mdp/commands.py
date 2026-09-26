@@ -47,6 +47,29 @@ class MicrotaurVelocityCommand(UniformVelocityCommand):
 
   cfg: MicrotaurVelocityCommandCfg
 
+  def __init__(self, cfg, env):
+    super().__init__(cfg, env)
+    # Per episode, for the terrain curriculum: commanded path length and the body's
+    # progress along the commanded direction (body frame), both in metres.
+    self.cmd_distance = torch.zeros(self.num_envs, device=self.device)
+    self.cmd_progress = torch.zeros(self.num_envs, device=self.device)
+
+  def reset(self, env_ids: Sequence[int] | None = None):
+    if env_ids is None:
+      env_ids = slice(None)
+    self.cmd_distance[env_ids] = 0.0
+    self.cmd_progress[env_ids] = 0.0
+    return super().reset(env_ids)
+
+  def _update_metrics(self):
+    super()._update_metrics()
+    dt = self._env.step_dt
+    c = self.vel_command_b[:, :2]
+    n = torch.linalg.norm(c, dim=1)
+    v = torch.nan_to_num(self.robot.data.root_lin_vel_b[:, :2], nan=0.0, posinf=0.0, neginf=0.0)
+    self.cmd_distance += n * dt
+    self.cmd_progress += torch.sum(v * c, dim=1) / n.clamp_min(1e-6) * dt
+
   def _resample_command(self, env_ids: Sequence[int]):
     super()._resample_command(env_ids)
     if self.cfg.rel_standing_envs <= 0.0:

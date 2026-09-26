@@ -79,11 +79,13 @@ C_SPAWN_YAW_RAD = 0.0  # heading +x; straight-line commands only
 C_STEP_X_RANGE = (-0.5 * C_COURSE_LEN_M + C_FLAT_BEFORE_M, -0.5 * C_COURSE_LEN_M + C_FLAT_BEFORE_M + C_STEP_LEN_M)
 
 
-def level_difficulty(difficulty: float, num_levels: int | None) -> float:
-  """Snap IsaacLab's per-tile difficulty (row + U(0,1)) / num_rows to level row -> row / (num_levels - 1)."""
+def level_difficulty(difficulty: float, num_levels: int | None, num_rows: int | None = None) -> float:
+  """Snap IsaacLab's per-tile difficulty (row + U(0,1)) / num_rows to level row -> row / (num_levels - 1).
+  num_rows > num_levels: the extra rows past the last level repeat the hardest level (run-out rows)."""
   if not num_levels or num_levels < 2:
     return float(difficulty)
-  level = min(max(int(math.floor(difficulty * num_levels + 1e-9)), 0), num_levels - 1)
+  rows = num_rows or num_levels
+  level = min(max(int(math.floor(difficulty * rows + 1e-9)), 0), num_levels - 1)
   return level / (num_levels - 1)
 
 
@@ -167,7 +169,7 @@ def block_cell_heights(size: tuple[float, float], difficulty: float, cell_m: flo
 
 def blocks_terrain(difficulty: float, cfg: MicrotaurBlocksTerrainCfg) -> tuple[list[trimesh.Trimesh], np.ndarray]:
   """B: fixed Gaussian cell pattern, scaled by the level's difficulty."""
-  d = level_difficulty(difficulty, cfg.num_levels)
+  d = level_difficulty(difficulty, cfg.num_levels, cfg.num_rows)
   h = cfg.height_scale * block_cell_heights(cfg.size, d, cfg.cell_m, cfg.pattern_seed)
   mesh = _height_grid_mesh(h, (cfg.cell_m, cfg.cell_m), cfg.skirt_base_z)
   return [mesh], np.array([0.5 * cfg.size[0], 0.5 * cfg.size[1], 0.0])
@@ -175,7 +177,7 @@ def blocks_terrain(difficulty: float, cfg: MicrotaurBlocksTerrainCfg) -> tuple[l
 
 def step_terrain(difficulty: float, cfg: MicrotaurStepTerrainCfg) -> tuple[list[trimesh.Trimesh], np.ndarray]:
   """C: low flat -> left half (y > 0) raised -> low flat along +x, course centred on the tile."""
-  d = level_difficulty(difficulty, cfg.num_levels)
+  d = level_difficulty(difficulty, cfg.num_levels, cfg.num_rows)
   lx, ly = cfg.size
   course = cfg.flat_before_m + cfg.step_len_m + cfg.flat_after_m
   if course > lx + 1e-9:
@@ -197,7 +199,16 @@ def step_terrain(difficulty: float, cfg: MicrotaurStepTerrainCfg) -> tuple[list[
   ]
   if z > 1e-7:  # step faces: entry (faces -x), exit (faces +x), side (faces -y, toward the low right half)
     quads += [_walls_x([x0, x1], ym, ly, 0.0, z, [False, True]), _walls_y(ym, x0, x1, 0.0, z, False)]
-  return [_quads_to_mesh(quads)], np.array([0.5 * lx, 0.5 * ly, 0.0])
+  meshes = [_quads_to_mesh(quads)]
+  if cfg.lane_half_width_m:
+    # Guard rails along the whole tile (they join the lanes of the next / previous level):
+    # a lane centred on the step edge, one side raised, one low; tops at z_max + wall height.
+    w, t, top = cfg.lane_half_width_m, cfg.wall_thickness_m, cfg.delta_m + cfg.wall_height_m
+    for yc in (ym + w + 0.5 * t, ym - w - 0.5 * t):
+      box = trimesh.creation.box(extents=(lx, t, top - b))
+      box.apply_translation((0.5 * lx, yc, 0.5 * (top + b)))
+      meshes.append(box)
+  return meshes, np.array([0.5 * lx, 0.5 * ly, 0.0])
 
 
 # ---------------------------------------------------------------- cfgs
@@ -216,6 +227,7 @@ class MicrotaurBlocksTerrainCfg(SubTerrainBaseCfg):
   pattern_seed: int = B_PATTERN_SEED
   height_scale: float = 1.0  # multiplies the whole map (1 = clip at 50% of the stance budget, 2 = 100%)
   num_levels: int | None = NUM_LEVELS  # None: use IsaacLab's continuous difficulty
+  num_rows: int | None = None  # generator rows if > num_levels (run-out rows at the hardest level)
   skirt_base_z: float = SKIRT_BASE_Z_M
 
 
@@ -229,6 +241,10 @@ class MicrotaurStepTerrainCfg(SubTerrainBaseCfg):
   delta_m: float = C_DELTA_M
   min_half_width_m: float = 1.0
   num_levels: int | None = NUM_LEVELS
+  num_rows: int | None = None
+  lane_half_width_m: float | None = None  # guard rails at +/- this from the step edge (None: open tile)
+  wall_height_m: float = 0.08  # rail top above the raised side at this tile's maximum step (delta_m)
+  wall_thickness_m: float = 0.02
   skirt_base_z: float = SKIRT_BASE_Z_M
 
 
@@ -263,6 +279,35 @@ def scaled_terrains_cfg(scale: float) -> TerrainGeneratorCfg:
   return cfg
 
 
+# Curriculum terrain (Teacher-Cur): 7 levels at x2 (B -15.2 / +21.6 mm, C 36.8 mm at the top),
+# one extra run-out row at the hardest level so a robot on the top level never walks onto the
+# flat border mid-episode, C as a railed lane (the robot cannot leave the step edge).
+CUR_NUM_LEVELS = 7
+CUR_RUNOUT_ROWS = 1
+CUR_TERRAIN_SCALE = 2.0
+C_LANE_HALF_WIDTH_M = 0.12  # stance feet at y +/-0.05, body box half-width 0.075 -> 45 mm body clearance
+
+
+def curriculum_terrains_cfg(scale: float = CUR_TERRAIN_SCALE, num_levels: int = CUR_NUM_LEVELS,
+                            runout_rows: int = CUR_RUNOUT_ROWS,
+                            lane_half_width_m: float | None = C_LANE_HALF_WIDTH_M) -> TerrainGeneratorCfg:
+  rows = num_levels + runout_rows
+  cfg = MICROTAUR_TERRAINS_CFG.copy()
+  cfg.num_rows = rows
+  subs = dict(cfg.sub_terrains)
+  subs["B_blocks"] = subs["B_blocks"].replace(height_scale=scale, num_levels=num_levels, num_rows=rows)
+  subs["C_step"] = subs["C_step"].replace(delta_m=C_DELTA_M * scale, num_levels=num_levels, num_rows=rows,
+                                          lane_half_width_m=lane_half_width_m)
+  cfg.sub_terrains = subs
+  return cfg
+
+
+def terrain_num_levels(terrain) -> int:
+  """Curriculum levels of a TerrainImporter's generator (rows past it are run-out rows)."""
+  sub = terrain.cfg.terrain_generator.sub_terrains["B_blocks"]
+  return int(sub.num_levels or terrain.cfg.terrain_generator.num_rows)
+
+
 # ---------------------------------------------------------------- terrain type lookup
 def column_terrain_types(cfg: TerrainGeneratorCfg = MICROTAUR_TERRAINS_CFG) -> tuple[str, ...]:
   """Sub-terrain name per column, same rule as TerrainGenerator._generate_curriculum_terrains."""
@@ -289,7 +334,8 @@ def env_terrain_type_ids(terrain, cfg: TerrainGeneratorCfg | None = None):
 
 __all__ = [
   "B_MAX_HEIGHT_M", "BORDER_WIDTH_M", "CELL_M", "C_DELTA_M", "C_SPAWN_OFFSET_XY", "C_SPAWN_YAW_RAD",
-  "C_STEP_X_RANGE", "COLUMN_TERRAIN_TYPES", "COLUMN_TERRAIN_TYPE_IDS", "DOWN_MAX_M", "MICROTAUR_TERRAINS_CFG",
+  "C_STEP_X_RANGE", "CUR_NUM_LEVELS", "CUR_TERRAIN_SCALE", "C_LANE_HALF_WIDTH_M", "curriculum_terrains_cfg",
+  "terrain_num_levels", "COLUMN_TERRAIN_TYPES", "COLUMN_TERRAIN_TYPE_IDS", "DOWN_MAX_M", "MICROTAUR_TERRAINS_CFG",
   "MicrotaurBlocksTerrainCfg", "MicrotaurFlatTerrainCfg", "MicrotaurStepTerrainCfg", "NUM_LEVELS", "SIGMA_M",
   "SKIRT_BASE_Z_M", "TILE_SIZE_M", "UP_MAX_M", "block_cell_heights", "column_terrain_types",
   "env_terrain_type_ids", "level_difficulty", "scaled_terrains_cfg",

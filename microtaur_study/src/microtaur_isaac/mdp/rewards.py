@@ -55,6 +55,7 @@ import torch
 import isaaclab.envs.mdp as il_mdp
 from isaaclab.managers import CurriculumTermCfg, ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.utils import configclass
+from isaaclab.utils.math import quat_apply
 
 from microtaur_common import reward_math as RM
 from microtaur_common.robot_constants import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
@@ -65,7 +66,8 @@ from microtaur_common.task_params import (  # noqa: F401  (re-exported)
 
 from .contact import foot_contact_timers
 from .terminations import UNSTABLE_ANG_VEL_RAD_S, UNSTABLE_LIN_VEL_M_S, physics_unstable
-from .observations import ROBOT, feet_sensor_cfg, legs_cfg
+from .. import FOOT_OFFSET_IN_BODY_M
+from .observations import ROBOT, feet_body_cfg, feet_sensor_cfg, legs_cfg
 
 if TYPE_CHECKING:
   from isaaclab.envs import ManagerBasedRLEnv
@@ -125,6 +127,20 @@ def feet_air_time(
   cmd = torch.linalg.norm(env.command_manager.get_command(command_name), dim=1)
   speed = torch.linalg.norm(_finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, :2]), dim=1)
   return RM.air_time_spot(air, con, cmd, speed, mode_time_s, velocity_threshold_m_s)
+
+
+def feet_slide(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+  """IsaacLab / legged_gym feet_slide: sum over feet in contact of the foot's horizontal
+  speed (m/s). Velocity of the foot sphere centre (body velocity + w x r, the foot is an
+  offset point on leglink2), contact from the policy-step timers of mdp.contact."""
+  contact, _, _ = foot_contact_timers(env, sensor_cfg)
+  d = env.scene[asset_cfg.name].data
+  quat = d.body_link_quat_w[:, asset_cfg.body_ids]
+  off = torch.tensor(FOOT_OFFSET_IN_BODY_M, device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
+  r = quat_apply(quat.reshape(-1, 4), off.reshape(-1, 3)).reshape(off.shape)
+  v = _finite(d.body_link_lin_vel_w[:, asset_cfg.body_ids]) + torch.cross(_finite(d.body_link_ang_vel_w[:, asset_cfg.body_ids]), r, dim=-1)
+  speed = torch.linalg.norm(v[..., :2], dim=-1).clamp(max=_VEL_CLAMP)
+  return torch.sum(speed * contact.float(), dim=1)
 
 
 # --- body posture (IsaacLab velocity task / legged_gym standard terms) -------------
@@ -259,6 +275,9 @@ class MicrotaurRewardsCfg:
     params={"sensor_cfg": feet_sensor_cfg(), "mode_time_s": AIR_TIME_MODE_S,
             "velocity_threshold_m_s": AIR_TIME_VELOCITY_THRESHOLD_M_S},
   )
+  # Stance-foot slip (IsaacLab / legged_gym feet_slide; -0.25 in IsaacLab's velocity task), off by default.
+  feet_slide = RewardTermCfg(func=feet_slide, weight=0.0,
+                             params={"sensor_cfg": feet_sensor_cfg(), "asset_cfg": feet_body_cfg()})
   # Body posture, off by default (weight 0). Standard values: flat_orientation_l2
   # -2.5 (IsaacLab A1/Go1/Go2 flat) / -5.0 (ANYmal flat, legged_gym ANYmal-C flat);
   # lin_vel_z_l2 -2.0 and ang_vel_xy_l2 -0.05 (legged_gym and IsaacLab defaults).

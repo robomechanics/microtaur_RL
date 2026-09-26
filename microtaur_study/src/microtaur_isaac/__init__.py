@@ -63,6 +63,7 @@ for _name, _cfg in (
   ("Teacher-Play", "MicrotaurTeacherPlayEnvCfg"),
   ("Teacher-Hard", "MicrotaurTeacherHardEnvCfg"), ("Teacher-Hard-Play", "MicrotaurTeacherHardPlayEnvCfg"),
   ("Teacher-Hard2x", "MicrotaurTeacherHard2xEnvCfg"), ("Teacher-Hard2x-Play", "MicrotaurTeacherHard2xPlayEnvCfg"),
+  ("Teacher-Cur", "MicrotaurTeacherCurEnvCfg"), ("Teacher-Cur-Play", "MicrotaurTeacherCurPlayEnvCfg"),
 ):
   gym.register(
     id=f"Microtaur-Isaac-{_name}-v0",

@@ -46,11 +46,12 @@ FOOTPRINT_HALF_M = 0.13  # conservative half-size of the foot polygon at any hea
 _B_CELLS: dict[int, np.ndarray] = {}
 
 
-def _b_cells(level: int, scale: float = 1.0):
+def _b_cells(level: int, scale: float = 1.0, num_levels: int | None = None):
   from . import terrains as TR
-  key = (level, scale)
+  n = num_levels or TR.NUM_LEVELS
+  key = (level, scale, n)
   if key not in _B_CELLS:
-    _B_CELLS[key] = scale * TR.block_cell_heights(TR.TILE_SIZE_M, level / (TR.NUM_LEVELS - 1))
+    _B_CELLS[key] = scale * TR.block_cell_heights(TR.TILE_SIZE_M, min(level, n - 1) / (n - 1))
   return _B_CELLS[key]
 
 
@@ -75,9 +76,10 @@ def terrain_spawn(env, ids, xy, yaw):
     xy[is_b] = rand * torch.tensor((hx, hy), device=xy.device, dtype=xy.dtype)
     c = TR.CELL_M
     scale = float(terrain.cfg.terrain_generator.sub_terrains["B_blocks"].height_scale)
+    n_lv = TR.terrain_num_levels(terrain)
     g = []
     for k, (p, lev) in enumerate(zip(xy[is_b].cpu().numpy(), levels[is_b].cpu().numpy())):
-      h = _b_cells(int(lev), scale)
+      h = _b_cells(int(lev), scale, n_lv)
       i0, i1 = (int(math.floor((p[0] + 0.5 * lx + s * FOOTPRINT_HALF_M) / c)) for s in (-1, 1))
       j0, j1 = (int(math.floor((p[1] + 0.5 * ly + s * FOOTPRINT_HALF_M) / c)) for s in (-1, 1))
       g.append(float(h[max(i0, 0):i1 + 1, max(j0, 0):j1 + 1].max()))
@@ -107,6 +109,37 @@ def terrain_levels_from_spawn(env, env_ids, command_name: str = "twist") -> torc
   return torch.mean(terrain.terrain_levels.float())
 
 
+def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_frac: float = 0.8,
+                            demote_frac: float = 0.4, steps_per_level: int = 300 * 32) -> torch.Tensor:
+  """Terrain curriculum on commanded distance (Teacher-Cur).
+
+  Per episode the command term integrates the commanded path length and the body's
+  progress along the commanded direction. ratio = progress / (mean commanded speed x
+  full episode length), so a robot that falls early scores low. Promote one level if
+  ratio >= promote_frac, demote if < demote_frac. Levels above
+  common_step_counter // steps_per_level are locked (300 iterations x 32 steps per
+  level: only level 0 for the first 300 iterations, the top level from 300 x (L - 1)).
+  Robots at the unlocked cap stay there. Run-out rows past the last level are never
+  assigned."""
+  from . import terrains as TR
+  terrain = env.scene.terrain
+  if getattr(env, "microtaur_spawn_xy", None) is None:
+    return torch.mean(terrain.terrain_levels.float())
+  n_lv = TR.terrain_num_levels(terrain)
+  cap = min(n_lv - 1, int(env.common_step_counter) // steps_per_level)
+  term = env.command_manager.get_term(command_name)
+  elapsed = env.episode_length_buf[env_ids].float().clamp_min(1.0) * env.step_dt
+  expected = term.cmd_distance[env_ids] / elapsed * env.max_episode_length_s
+  ratio = term.cmd_progress[env_ids] / expected.clamp_min(1e-3)
+  lv = terrain.terrain_levels[env_ids]
+  up = (ratio >= promote_frac) & (lv < cap)
+  down = ratio < demote_frac
+  lv = torch.clamp(lv + up.long() - down.long(), 0, cap)
+  terrain.terrain_levels[env_ids] = lv
+  terrain.env_origins[env_ids] = terrain.terrain_origins[lv, terrain.terrain_types[env_ids]]
+  return torch.mean(terrain.terrain_levels.float())
+
+
 def hard_terrain_placement(env, env_ids) -> None:
   """Startup (Teacher-Hard): every env on a B or C column (A skipped, round-robin over
   the B / C columns, so 5:3 like the generator) at the hardest level, for the whole
@@ -116,7 +149,7 @@ def hard_terrain_placement(env, env_ids) -> None:
   cols = [c for c, t in enumerate(TR.COLUMN_TERRAIN_TYPES) if t != "A_flat"]
   n = env.num_envs
   terrain.terrain_types[:] = torch.tensor(cols, device=terrain.terrain_types.device)[torch.arange(n) % len(cols)]
-  terrain.terrain_levels[:] = TR.NUM_LEVELS - 1
+  terrain.terrain_levels[:] = TR.terrain_num_levels(terrain) - 1
   terrain.env_origins[:] = terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
 
 
@@ -204,6 +237,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
   teacher: bool = False
   play: bool = False
   terrain_scale: float = 1.0  # rough only: B heights and the C step x this (terrains.scaled_terrains_cfg)
+  cur_terrain: bool = False  # rough only: 7-level railed-C terrain + run-out row, commanded-distance curriculum
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=2048, env_spacing=0.5)
 
   def __post_init__(self):
@@ -219,8 +253,11 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
       from . import terrains as TR
       from .terrains import MICROTAUR_TERRAINS_CFG
       self.scene.terrain.terrain_type = "generator"
-      self.scene.terrain.terrain_generator = (MICROTAUR_TERRAINS_CFG if self.terrain_scale == 1.0 else
-                                              TR.scaled_terrains_cfg(self.terrain_scale))
+      if self.cur_terrain:
+        self.scene.terrain.terrain_generator = TR.curriculum_terrains_cfg(self.terrain_scale)
+      else:
+        self.scene.terrain.terrain_generator = (MICROTAUR_TERRAINS_CFG if self.terrain_scale == 1.0 else
+                                                TR.scaled_terrains_cfg(self.terrain_scale))
       self.scene.terrain.max_init_terrain_level = 0
     if self.rough or self.teacher:
       # 12 x 9 = 108 values at 35 mm (two samples per 70 mm cell) for the teacher.
@@ -245,7 +282,8 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.curriculum.command_ranges = C.make_command_curriculum_term(play=self.play)
     self.curriculum.energy_weight = R.make_energy_curriculum_term()
     if self.rough:
-      self.curriculum.terrain_levels = CurriculumTermCfg(func=terrain_levels_from_spawn)
+      self.curriculum.terrain_levels = CurriculumTermCfg(
+        func=terrain_levels_progress if self.cur_terrain else terrain_levels_from_spawn)
     if self.play:
       self.episode_length_s = 1.0e9
       if self.rough:
@@ -345,3 +383,18 @@ class MicrotaurTeacherHard2xEnvCfg(MicrotaurTeacherHardEnvCfg):
 @configclass
 class MicrotaurTeacherHard2xPlayEnvCfg(MicrotaurTeacherHardPlayEnvCfg):
   terrain_scale: float = 2.0
+
+
+@configclass
+class MicrotaurTeacherCurEnvCfg(MicrotaurTeacherEnvCfg):
+  """Teacher with the curriculum terrain: 7 levels up to x2 (B -15.2 / +21.6 mm, C 36.8 mm),
+  a run-out row, C as a railed lane, promotion on commanded distance, one level unlocked
+  per 300 iterations."""
+  cur_terrain: bool = True
+  terrain_scale: float = 2.0
+
+
+@configclass
+class MicrotaurTeacherCurPlayEnvCfg(MicrotaurTeacherCurEnvCfg):
+  play: bool = True
+  scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
