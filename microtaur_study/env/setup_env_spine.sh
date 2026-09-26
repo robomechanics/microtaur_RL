@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # conda env "spine": Isaac Sim 5.1 + IsaacLab v2.3.0 (rsl-rl-lib 3.0.1) + mujoco + microtaur_study
 set -euo pipefail
-ROOT=/home/rml3/Documents/ben/spine
-source /home/rml3/anaconda3/etc/profile.d/conda.sh
+# ROOT holds IsaacLab/ and microtaur_RL/ side by side; override with SPINE_ROOT on another machine.
+ROOT=${SPINE_ROOT:-/home/rml3/Documents/ben/spine}
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda create -y -n spine python=3.11
 conda activate spine
 pip install --upgrade pip

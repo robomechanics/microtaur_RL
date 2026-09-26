@@ -32,7 +32,7 @@ from .mdp import observations as O
 from .mdp import rewards as R
 from .mdp import terminations as T
 from .mdp.actions import MicrotaurWalkActionCfg
-from .robot import MICROTAUR_RIGID_CFG
+from .robot import MICROTAUR_RIGID_CFG, VISUAL_USD_PATH
 
 PHYSICS_DT_S = 0.0025
 DECIMATION = round(POLICY_DT_S / PHYSICS_DT_S)  # 14
@@ -230,6 +230,18 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
       self.curriculum.terrain_levels = CurriculumTermCfg(func=terrain_levels_from_spawn)
     if self.play:
       self.episode_length_s = 1.0e9
+      if self.rough:
+        # Spread robots over all levels and keep them there.
+        self.scene.terrain.max_init_terrain_level = None
+        self.curriculum.terrain_levels = None
+      self.scene.robot = self.scene.robot.replace(
+        spawn=self.scene.robot.spawn.replace(usd_path=str(VISUAL_USD_PATH)))
+      # GUI camera follows env 0's robot from the front-left side.
+      self.viewer.origin_type = "asset_root"
+      self.viewer.asset_name = "robot"
+      self.viewer.env_index = 0
+      self.viewer.eye = (0.30, -0.45, 0.18)
+      self.viewer.lookat = (0.0, 0.0, 0.04)
 
 
 @configclass
@@ -263,3 +275,21 @@ class MicrotaurTeacherEnvCfg(MicrotaurFlatEnvCfg):
   """Rough terrain; the actor gets the privileged teacher group (critic set + 35 mm height map)."""
   rough: bool = True
   teacher: bool = True
+
+
+@configclass
+class MicrotaurFlatPlayEnvCfg(MicrotaurFlatEnvCfg):
+  play: bool = True
+  scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
+
+
+@configclass
+class MicrotaurRoughPlayEnvCfg(MicrotaurRoughEnvCfg):
+  play: bool = True
+  scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
+
+
+@configclass
+class MicrotaurTeacherPlayEnvCfg(MicrotaurTeacherEnvCfg):
+  play: bool = True
+  scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)

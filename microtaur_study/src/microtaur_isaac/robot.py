@@ -22,6 +22,8 @@ from microtaur_common.robot_constants import (
 )
 
 USD_PATH = ASSET_DIR / "microtaur_rigid.usda"
+# Same asset plus the visual meshes (scripts/isaac_make_usd.py); used by the Play tasks.
+VISUAL_USD_PATH = ASSET_DIR / "microtaur_rigid_visual.usd"
 
 # Closed chain in PhysX: 16 position iterations and a 2.5 ms step keep the loop
 # closure within MuJoCo's error on trot at KD 0.045 (spike 2026-09-25); at KD 0

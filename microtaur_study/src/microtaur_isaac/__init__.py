@@ -55,7 +55,13 @@ TERRAIN_TYPES = ("A_flat", "B_blocks", "C_step")
 
 import gymnasium as gym
 
-for _name, _cfg in (("Flat", "MicrotaurFlatEnvCfg"), ("Rough", "MicrotaurRoughEnvCfg"), ("Teacher", "MicrotaurTeacherEnvCfg")):
+# Microtaur-Isaac-{Flat,Rough,Teacher}-v0 train; -Play-v0 is the same task with
+# the play config (16 envs, no noise / randomisation / timeout, camera on env 0).
+for _name, _cfg in (
+  ("Flat", "MicrotaurFlatEnvCfg"), ("Rough", "MicrotaurRoughEnvCfg"), ("Teacher", "MicrotaurTeacherEnvCfg"),
+  ("Flat-Play", "MicrotaurFlatPlayEnvCfg"), ("Rough-Play", "MicrotaurRoughPlayEnvCfg"),
+  ("Teacher-Play", "MicrotaurTeacherPlayEnvCfg"),
+):
   gym.register(
     id=f"Microtaur-Isaac-{_name}-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
@@ -63,6 +69,6 @@ for _name, _cfg in (("Flat", "MicrotaurFlatEnvCfg"), ("Rough", "MicrotaurRoughEn
     kwargs={
       "env_cfg_entry_point": f"microtaur_isaac.env_cfg:{_cfg}",
       "rsl_rl_cfg_entry_point": "microtaur_isaac.agents:"
-      + ("MicrotaurTeacherPPORunnerCfg" if _name == "Teacher" else "MicrotaurPPORunnerCfg"),
+      + ("MicrotaurTeacherPPORunnerCfg" if _name.startswith("Teacher") else "MicrotaurPPORunnerCfg"),
     },
   )

@@ -5,8 +5,13 @@ so masses, inertias, joint frames, collision primitives and closure sites are
 the MuJoCo values exactly. Each leg's two MJCF <connect> constraints share one
 axis, so one PhysX revolute loop-closure joint per leg (excluded from the
 articulation tree) closes the five-bar; the closed-chain spike measured this at
-pos_iters 16, dt 2.5 ms. Bodies are authored at the IK stand pose. Visual meshes
-are not included (collision primitives only).
+pos_iters 16, dt 2.5 ms. Bodies are authored at the IK stand pose.
+
+build_usd(visuals=False) writes collision primitives only (the training asset).
+visuals=True also adds the MJCF's visual meshes (geom group 2, non-colliding,
+display colour from the MJCF material): each of the 13 meshes is stored once
+under the class prim /_visual_meshes and every geom instance references it.
+They carry no CollisionAPI or mass, so the physics is unchanged.
 
 Requires pxr (call after the Isaac app is launched) and mujoco.
 """
@@ -32,8 +37,8 @@ def compile_model() -> mujoco.MjModel:
   return spec.compile()
 
 
-def build_usd(out_path: str) -> dict:
-  from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade
+def build_usd(out_path: str, visuals: bool = False) -> dict:
+  from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
 
   m = compile_model()
   d = mujoco.MjData(m)
@@ -102,6 +107,32 @@ def build_usd(out_path: str) -> dict:
     UsdShade.MaterialBindingAPI.Apply(geom.GetPrim()).Bind(
       material(float(m.geom_friction[g][0])), UsdShade.Tokens.weakerThanDescendants, "physics"
     )
+
+  if visuals:
+    stage.CreateClassPrim("/_visual_meshes")
+    protos = {}
+    for g in range(m.ngeom):
+      if int(m.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_MESH) or int(m.geom_group[g]) != 2:
+        continue
+      mid = int(m.geom_dataid[g])
+      if mid not in protos:
+        protos[mid] = f"/_visual_meshes/mesh_{mid}"
+        mesh = UsdGeom.Mesh.Define(stage, protos[mid])
+        va, vn = int(m.mesh_vertadr[mid]), int(m.mesh_vertnum[mid])
+        fa, fn = int(m.mesh_faceadr[mid]), int(m.mesh_facenum[mid])
+        mesh.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(m.mesh_vert[va:va + vn], dtype=np.float32)))
+        mesh.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(fn, 3, dtype=np.int32)))
+        mesh.CreateFaceVertexIndicesAttr(
+          Vt.IntArray.FromNumpy(np.ascontiguousarray(m.mesh_face[fa:fa + fn].reshape(-1), dtype=np.int32)))
+        mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+      # Typeless prim + internal reference: the Mesh type comes from the prototype.
+      prim = stage.DefinePrim(f"/microtaur/{m.body(m.geom_bodyid[g]).name}/visual_{g}")
+      prim.GetReferences().AddInternalReference(protos[mid])
+      inst = UsdGeom.Mesh(prim)
+      inst.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Vec3d(*map(float, m.geom_pos[g])))
+      inst.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(qd(m.geom_quat[g]))
+      rgba = m.mat_rgba[m.geom_matid[g]] if m.geom_matid[g] >= 0 else m.geom_rgba[g]
+      inst.CreateDisplayColorAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, rgba[:3]))]))
 
   for j in range(m.njnt):
     if int(m.jnt_type[j]) != int(mujoco.mjtJoint.mjJNT_HINGE):
