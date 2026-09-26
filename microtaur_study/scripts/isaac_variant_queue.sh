@@ -9,8 +9,8 @@
 # For each: scripts/isaac_train_variant.sh, then scripts/isaac_eval_round.sh on the
 # last checkpoint into figures/isaac_eval/<run_name>_it<N>. Prints
 # "VARIANT_DONE <run_name> <eval dir>" or "VARIANT_FAILED <run_name>" per line.
+# A variant whose final checkpoint already exists is only evaluated.
 set -uo pipefail
-set -f  # overrides contain [ ] { }: no globbing when they are word-split
 Q=$1; shift
 ITERS=600
 [[ ${1:-} == --iters ]] && ITERS=$2
@@ -18,11 +18,15 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 ROOT=/home/rml3/Documents/ben/spine/runs_local/isaac
 FIG=/home/rml3/Documents/ben/spine/figures/isaac_eval
 grep -vE '^\s*(#|$)' "$Q" | while read -r NAME OVR; do
-  # shellcheck disable=SC2086
-  if ! bash "$HERE/scripts/isaac_train_variant.sh" "$NAME" --iters "$ITERS" $OVR > "$ROOT/$NAME.driver" 2>&1; then
-    echo "VARIANT_FAILED $NAME (train) $(tail -3 "$ROOT/$NAME.driver" | tr '\n' ' ')"; continue
+  set -f; read -r -a ARGS <<< "$OVR"; set +f  # overrides contain [ ] { }: split without globbing
+  CK=$(ls "$ROOT"/logs/rsl_rl/*/*_"$NAME"/model_$((ITERS - 1)).pt 2>/dev/null | head -1)
+  if [[ -z $CK ]]; then
+    if ! bash "$HERE/scripts/isaac_train_variant.sh" "$NAME" --iters "$ITERS" "${ARGS[@]}" > "$ROOT/$NAME.driver" 2>&1; then
+      echo "VARIANT_FAILED $NAME (train) $(tail -3 "$ROOT/$NAME.driver" | tr '\n' ' ')"; continue
+    fi
+    CK=$(ls "$ROOT"/logs/rsl_rl/*/*_"$NAME"/model_$((ITERS - 1)).pt 2>/dev/null | head -1)
   fi
-  CK=$(ls "$ROOT"/logs/rsl_rl/*/*_"$NAME"/model_$((ITERS - 1)).pt | head -1)
+  [[ -z $CK ]] && { echo "VARIANT_FAILED $NAME (no checkpoint)"; continue; }
   OUT="$FIG/${NAME}_it$((ITERS - 1))"
   if DISPLAY=${DISPLAY:-:1} bash "$HERE/scripts/isaac_eval_round.sh" "$CK" "$OUT" > "$ROOT/$NAME.eval" 2>&1; then
     cp -f "$OUT/play.mp4" "/home/rml3/Documents/ben/spine/figures/isaac_play/${NAME}_isaac.mp4" 2>/dev/null
