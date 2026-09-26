@@ -80,7 +80,20 @@ def function_terms():
     "motor_energy": R.motor_energy(env, XL330_COPPER_W_PER_NM2, EXPECTED_TOTAL_MASS_KG, R.ENERGY_REF_SPEED_M_S),
     "action_rate": R.mdp.action_rate_l2(env),
     "termination": R.mdp.is_terminated(env),
+    "trot_gait": R.trot_gait(env, R.FOOT_CONTACT, R.TROT_PAIRS, R.GAIT_STD_S2, R.GAIT_MAX_ERR_S),
   }
+
+
+def manual_gait():
+  """Spot GaitReward written out independently: six kernels, each exp(-SE / std)."""
+  d = env.scene["feet_ground_contact"].data
+  air, con = d.current_air_time, d.current_contact_time
+  e2, std = R.GAIT_MAX_ERR_S**2, R.GAIT_STD_S2
+  k = lambda x, y: torch.exp(-(torch.clamp((x) ** 2, max=e2) + torch.clamp((y) ** 2, max=e2)) / std)
+  rr, rl, fl, fr = 0, 1, 2, 3
+  return (k(air[:, rr] - air[:, fl], con[:, rr] - con[:, fl]) * k(air[:, rl] - air[:, fr], con[:, rl] - con[:, fr])
+          * k(air[:, rr] - con[:, rl], con[:, rr] - air[:, rl]) * k(air[:, fl] - con[:, fr], con[:, fl] - air[:, fr])
+          * k(air[:, rr] - con[:, fr], con[:, rr] - air[:, fr]) * k(air[:, rl] - con[:, fl], con[:, rl] - air[:, fl]))
 
 
 def manual_terms(cmd):
@@ -95,6 +108,7 @@ def manual_terms(cmd):
     / (EXPECTED_TOTAL_MASS_KG * R.GRAVITY * R.ENERGY_REF_SPEED_M_S),
     "action_rate": ((am.action - am.prev_action) ** 2).sum(1),
     "termination": env.termination_manager.terminated.float(),
+    "trot_gait": manual_gait(),
   }
 
 

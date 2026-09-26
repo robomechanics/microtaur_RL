@@ -35,7 +35,10 @@ STAGES = {
     ang_vel_noise=0.003, gravity_noise=0.004, joint_pos_noise=0.002, joint_vel_noise=0.08,
     action_gain_range=(1.0, 1.0), action_bias_rad=0.0,
     encoder_bias_rad=0.0015, foot_friction_range=None,
-    root_com_xy_m=None, root_com_z_m=None, push=False,
+    # COM randomised from stage 0 (2026-09-25): the nominal COM comes from a
+    # static support-balance measurement and the policy must not depend on it
+    # being exact. Same ranges as stage 1.
+    root_com_xy_m=0.002, root_com_z_m=0.001, push=False,
   ),
   1: Sim2RealStage(
     ang_vel_noise=0.006, gravity_noise=0.008, joint_pos_noise=0.004, joint_vel_noise=0.15,

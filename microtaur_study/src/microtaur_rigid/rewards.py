@@ -50,6 +50,7 @@ from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.tasks.velocity import mdp
 
 from .commands import COMMAND_NAME
+from .sensors import FOOT_CONTACT
 from .robot import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
 
 GRAVITY = 9.81
@@ -75,9 +76,21 @@ WEIGHTS = {
   # 2026-09-25 showed 0.005-0.018 all keep walking with the curriculum).
   "motor_energy": 0.0,
   "action_rate": -0.05 / 8,
-  # mjlab multiplies by step_dt (0.02 s): -100 * 0.02 = -2.0 per termination.
-  "termination": -100.0,
+  # mjlab multiplies by step_dt (0.035 s at 28.6 Hz): -2.0 / 0.035 per event
+  # keeps the penalty at -2.0 per termination.
+  "termination": -2.0 / 0.035,
+  # Spot's weighting (IsaacLab config/spot): gait 10 against velocity tracking 5.
+  "trot_gait": 2.0,
 }
+
+# Trot = diagonal pairs in phase: (leg1 RR, leg3 FL) and (leg2 RL, leg4 FR).
+# Indices are into the feet_ground_contact primaries (FOOT_GEOM_NAMES order).
+TROT_PAIRS = ((0, 2), (1, 3))
+# IsaacLab Spot uses std 0.1 s^2 and max_err 0.2 s for a 0.3 s air-time target.
+# Microtaur's target is ~0.15 s (the upstream AIR_TIME_TARGET_S), half the time
+# scale, so the squared-time std is quartered and the clip halved.
+GAIT_STD_S2 = 0.1 / 4
+GAIT_MAX_ERR_S = 0.2 / 2
 
 
 def track_lin_vel_xy(env, command_name: str, sigma: float) -> torch.Tensor:
@@ -109,6 +122,34 @@ def motor_power_w(env, copper_w_per_nm2: float) -> tuple[torch.Tensor, torch.Ten
 def motor_energy(env, copper_w_per_nm2: float, mass_kg: float, ref_speed_m_s: float) -> torch.Tensor:
   mech, copper = motor_power_w(env, copper_w_per_nm2)
   return (mech + copper) / (mass_kg * GRAVITY * ref_speed_m_s)
+
+
+def trot_gait(env, sensor_name: str, pairs, std: float, max_err: float) -> torch.Tensor:
+  """IsaacLab Spot's GaitReward, for a trot.
+
+  Product of six kernels on the running air / contact times of the feet:
+  the two feet of each diagonal pair should have the same air and contact time
+  (in phase), and each foot's air time should match the contact time of the
+  feet in the other pair (out of phase). 1 for a perfect trot, ~0 otherwise.
+  Spot additionally gates on the command being nonzero; here the forward
+  command is never zero, so it is always on.
+  """
+  data = env.scene[sensor_name].data
+  air, contact = data.current_air_time, data.current_contact_time
+  e2 = max_err**2
+
+  def sync(a, b):
+    se_air = torch.clamp(torch.square(air[:, a] - air[:, b]), max=e2)
+    se_con = torch.clamp(torch.square(contact[:, a] - contact[:, b]), max=e2)
+    return torch.exp(-(se_air + se_con) / std)
+
+  def anti(a, b):
+    se_0 = torch.clamp(torch.square(air[:, a] - contact[:, b]), max=e2)
+    se_1 = torch.clamp(torch.square(contact[:, a] - air[:, b]), max=e2)
+    return torch.exp(-(se_0 + se_1) / std)
+
+  (a0, a1), (b0, b1) = pairs
+  return sync(a0, a1) * sync(b0, b1) * anti(a0, b0) * anti(a1, b1) * anti(a0, b1) * anti(b0, a1)
 
 
 # Metrics are computed every step whatever the reward weight is (a reward term
@@ -157,6 +198,10 @@ def configure_rewards(cfg, energy_weight: float | None = None) -> None:
   )
   cfg.rewards["action_rate"] = RewardTermCfg(func=mdp.action_rate_l2, weight=WEIGHTS["action_rate"])
   cfg.rewards["termination"] = RewardTermCfg(func=mdp.is_terminated, weight=WEIGHTS["termination"])
+  cfg.rewards["trot_gait"] = RewardTermCfg(
+    func=trot_gait, weight=WEIGHTS["trot_gait"],
+    params={"sensor_name": FOOT_CONTACT, "pairs": TROT_PAIRS, "std": GAIT_STD_S2, "max_err": GAIT_MAX_ERR_S},
+  )
 
   cfg.curriculum["energy_weight"] = CurriculumTermCfg(
     func=env_mdp.reward_curriculum,
