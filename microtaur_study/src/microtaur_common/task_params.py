@@ -76,6 +76,10 @@ TROT_PAIRS = ((0, 2), (1, 3))
 AIR_TIME_MODE_S = 0.3
 AIR_TIME_VELOCITY_THRESHOLD_M_S = 0.05
 AIR_TIME_WEIGHT = 0.0
+# Dedicated turning term (Isaac heading_tracking): heading error integrated since the
+# last command; sigma ~11 deg, error clamped at 1 rad. Off by default.
+HEADING_SIGMA_RAD = 0.2
+HEADING_MAX_ERR_RAD = 1.0
 GAIT_STD_S2 = 0.1 / 4
 GAIT_MAX_ERR_S = 0.2 / 2
 

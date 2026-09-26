@@ -9,6 +9,7 @@ termination penalty and a trot-gait kernel. Port of microtaur_rigid/rewards.py.
       + 2.0   * trot kernel (Spot GaitReward)               trot_gait
       + w_A   * Spot air_time_reward (phase durations)      feet_air_time (0 = off by default)
       + w_o * g_xy^2 + w_z * v_z^2 + w_w * |w_xy|^2           body posture (0 = off by default)
+      + w_h * exp(-(integral of yaw-rate error)^2 / s^2)      heading_tracking (0 = off by default)
 
 Weights come from task_params.WEIGHTS; the maths from reward_math. IsaacLab's
 RewardManager.compute multiplies every term by weight * step_dt (checked in
@@ -58,7 +59,7 @@ from isaaclab.utils import configclass
 from microtaur_common import reward_math as RM
 from microtaur_common.robot_constants import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
 from microtaur_common.task_params import (  # noqa: F401  (re-exported)
-  AIR_TIME_MODE_S, AIR_TIME_VELOCITY_THRESHOLD_M_S, AIR_TIME_WEIGHT, COMMAND_NAME, ENERGY_REF_SPEED_M_S, GAIT_MAX_ERR_S, GAIT_STD_S2, GRAVITY, LIN_VEL_SIGMA_M_S, TROT_PAIRS,
+  AIR_TIME_MODE_S, AIR_TIME_VELOCITY_THRESHOLD_M_S, AIR_TIME_WEIGHT, COMMAND_NAME, HEADING_MAX_ERR_RAD, HEADING_SIGMA_RAD, ENERGY_REF_SPEED_M_S, GAIT_MAX_ERR_S, GAIT_STD_S2, GRAVITY, LIN_VEL_SIGMA_M_S, TROT_PAIRS,
   WEIGHTS, YAW_RATE_SIGMA_RAD_S, energy_weight_stages,
 )
 
@@ -156,6 +157,38 @@ def forward_speed_m_s(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneE
 METRIC_NAMES = ("mechanical_power_w", "copper_power_w", "forward_speed_m_s")
 
 
+class heading_tracking(ManagerTermBase):
+  """Dedicated turning term: exp(-e^2 / sigma^2), e = integral of (commanded - actual)
+  yaw rate since the command was last resampled (or the episode reset), clamped to
+  +-max_err_rad.
+
+  The instantaneous yaw-rate term cannot see a mean turn under the trot's +-0.5 rad/s
+  per-step body yaw (it is larger than the commands, so tracking the mean changes that
+  term by ~10%). Integrated, the per-step oscillation cancels while a missing turn or a
+  constant drift accumulates, so this term separates them. On straight commands it
+  penalises the accumulated heading drift.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+    super().__init__(cfg, env)
+    self._err = torch.zeros(env.num_envs, device=env.device)
+    self._counter = None
+
+  def reset(self, env_ids: Sequence[int] | None = None) -> None:
+    self._err[slice(None) if env_ids is None else env_ids] = 0.0
+
+  def __call__(self, env: ManagerBasedRLEnv, sigma_rad: float, max_err_rad: float,
+               command_name: str = COMMAND_NAME, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+    term = env.command_manager.get_term(command_name)
+    counter = term.command_counter.clone()
+    if self._counter is not None:
+      self._err = torch.where(counter != self._counter, torch.zeros_like(self._err), self._err)  # new command
+    self._counter = counter
+    wz = _finite(env.scene[asset_cfg.name].data.root_link_ang_vel_b[:, 2])
+    self._err = torch.clamp(self._err + (term.command[:, 2] - wz) * env.step_dt, -max_err_rad, max_err_rad)
+    return torch.exp(-torch.square(self._err) / sigma_rad**2)
+
+
 class energy_speed_metrics(ManagerTermBase):
   """Logging-only reward term (returns zeros; give it weight 1.0).
 
@@ -232,6 +265,9 @@ class MicrotaurRewardsCfg:
   flat_orientation_l2 = RewardTermCfg(func=flat_orientation_l2, weight=0.0)
   lin_vel_z_l2 = RewardTermCfg(func=lin_vel_z_l2, weight=0.0)
   ang_vel_xy_l2 = RewardTermCfg(func=ang_vel_xy_l2, weight=0.0)
+  # Dedicated turning term (heading error integrated since the last command), off by default.
+  heading_tracking = RewardTermCfg(func=heading_tracking, weight=0.0,
+                                   params={"sigma_rad": HEADING_SIGMA_RAD, "max_err_rad": HEADING_MAX_ERR_RAD})
   metrics = RewardTermCfg(
     func=energy_speed_metrics, weight=1.0,
     params={"copper_w_per_nm2": XL330_COPPER_W_PER_NM2, "asset_cfg": legs_cfg()},

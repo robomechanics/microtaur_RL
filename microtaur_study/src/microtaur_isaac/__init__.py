@@ -70,5 +70,8 @@ for _name, _cfg in (
       "env_cfg_entry_point": f"microtaur_isaac.env_cfg:{_cfg}",
       "rsl_rl_cfg_entry_point": "microtaur_isaac.agents:"
       + ("MicrotaurTeacherPPORunnerCfg" if _name.startswith("Teacher") else "MicrotaurPPORunnerCfg"),
+      # left/right symmetry augmentation: train.py --agent rsl_rl_sym_cfg_entry_point
+      "rsl_rl_sym_cfg_entry_point": "microtaur_isaac.agents:"
+      + ("MicrotaurTeacherPPORunnerSymCfg" if _name.startswith("Teacher") else "MicrotaurPPORunnerSymCfg"),
     },
   )

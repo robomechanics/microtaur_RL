@@ -7,7 +7,9 @@ upstream): 512-256-128 ELU actor and critic, init std 1.0, 32-step rollouts.
 from __future__ import annotations
 
 from isaaclab.utils import configclass
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg, RslRlSymmetryCfg
+
+from .mdp.symmetry import compute_symmetric_states
 
 
 @configclass
@@ -47,3 +49,22 @@ class MicrotaurTeacherPPORunnerCfg(MicrotaurPPORunnerCfg):
   (critic set + 35 mm height map)."""
   experiment_name = "microtaur_isaac_teacher"
   obs_groups = {"policy": ["teacher"], "critic": ["teacher"]}
+
+
+def _with_symmetry(alg: RslRlPpoAlgorithmCfg) -> RslRlPpoAlgorithmCfg:
+  """Left/right mirror data augmentation (mdp/symmetry.py), as IsaacLab's ANYmal
+  ...WithSymmetryCfg but mirror only (no front/back copies: the five-bar legs are
+  not front/back symmetric)."""
+  return alg.replace(symmetry_cfg=RslRlSymmetryCfg(use_data_augmentation=True,
+                                                   data_augmentation_func=compute_symmetric_states))
+
+
+@configclass
+class MicrotaurPPORunnerSymCfg(MicrotaurPPORunnerCfg):
+  """MicrotaurPPORunnerCfg + left/right symmetry augmentation (train with --agent rsl_rl_sym_cfg_entry_point)."""
+  algorithm = _with_symmetry(MicrotaurPPORunnerCfg().algorithm)
+
+
+@configclass
+class MicrotaurTeacherPPORunnerSymCfg(MicrotaurTeacherPPORunnerCfg):
+  algorithm = _with_symmetry(MicrotaurTeacherPPORunnerCfg().algorithm)
