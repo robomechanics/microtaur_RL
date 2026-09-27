@@ -90,6 +90,12 @@ if args.blind:
 
       tc.func = _flat_scan
       log(f"BLIND: {group}/height_scan replaced by flat ground at the env origin height")
+    if "foot_height" in om.active_terms[group]:
+      # foot_height measures against the height-scanner hits under each foot: without this the
+      # blindfolded teacher would still see the local ground through 4 values (critic audit 2026-09-27)
+      fc = om._group_obs_term_cfgs[group][om.active_terms[group].index("foot_height")]
+      fc.params["scanner_name"] = None
+      log(f"BLIND: {group}/foot_height measured against the env origin height instead of the scanner")
 
 robot = env.scene["robot"]
 terrain = env.scene.terrain

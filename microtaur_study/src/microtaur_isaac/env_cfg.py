@@ -117,7 +117,8 @@ def terrain_levels_from_spawn(env, env_ids, command_name: str = "twist") -> torc
 
 
 def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_frac: float = 0.8,
-                            demote_frac: float = 0.4, steps_per_level: int = 300 * 32) -> torch.Tensor:
+                            demote_frac: float = 0.4, steps_per_level: int = 300 * 32,
+                            min_level: int = 0) -> torch.Tensor:
   """Terrain curriculum on commanded distance (Teacher-Cur).
 
   Per episode the command term integrates the commanded path length and the body's
@@ -133,7 +134,7 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
   if getattr(env, "microtaur_spawn_xy", None) is None:
     return torch.mean(terrain.terrain_levels.float())
   n_lv = TR.terrain_num_levels(terrain)
-  cap = min(n_lv - 1, int(env.common_step_counter) // steps_per_level)
+  cap = min(n_lv - 1, max(min_level, int(env.common_step_counter) // steps_per_level))
   term = env.command_manager.get_term(command_name)
   elapsed = env.episode_length_buf[env_ids].float().clamp_min(1.0) * env.step_dt
   expected = term.cmd_distance[env_ids] / elapsed * env.max_episode_length_s
@@ -141,7 +142,7 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
   lv = terrain.terrain_levels[env_ids]
   up = (ratio >= promote_frac) & (lv < cap)
   down = ratio < demote_frac
-  lv = torch.clamp(lv + up.long() - down.long(), 0, cap)
+  lv = torch.clamp(lv + up.long() - down.long(), min_level, cap)  # min_level > 0: never back to flat
   terrain.terrain_levels[env_ids] = lv
   terrain.env_origins[env_ids] = terrain.terrain_origins[lv, terrain.terrain_types[env_ids]]
   return torch.mean(terrain.terrain_levels.float())
@@ -308,7 +309,8 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.curriculum.energy_weight = R.make_energy_curriculum_term()
     if self.rough:
       self.curriculum.terrain_levels = (
-        CurriculumTermCfg(func=terrain_levels_progress, params={"steps_per_level": 300 * 32}) if self.cur_terrain
+        CurriculumTermCfg(func=terrain_levels_progress, params={"steps_per_level": 300 * 32, "min_level": 0})
+        if self.cur_terrain
         else CurriculumTermCfg(func=terrain_levels_from_spawn))
     if self.play:
       self.episode_length_s = 1.0e9
