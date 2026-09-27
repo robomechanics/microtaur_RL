@@ -218,3 +218,75 @@ the top-view path and the videos before judging. Folders are
 - Turning: heading_tracking AND left/right symmetry augmentation together (user: do both at once).
 
 (2026-09-26 15:00, reorganised: flat run folders moved to figures/isaac_eval/flat/<run>_it<N>/, flat videos to figures/isaac_play/flat/, superseded flat checkpoints to runs_local/isaac/archive/flat_checkpoints/. Paths above written as figures/isaac_eval/<run> now live under figures/isaac_eval/flat/. Layout: /home/rml3/Documents/ben/spine/README.md)
+
+## Reward goal: ceilings and a scripted reference gait (scripts/isaac_reference_gait.py, figures/isaac_checks/reference_gait/)
+- Ceilings with the c1 reward set: track_lin 1.0 + track_ang 0.5 + trot 2.0 + air_time 0.4 (mode 0.2) + heading 1.0 = 4.9 /s.
+- Open-loop IK trot at 0.20 m/s, 10 mm lift, through the policy's action pipeline: T 0.40 s (2.5 Hz, 40 mm stroke) walks (0.178 m/s, no falls, straight) and scores 2.27 /s; T 0.28 s (3.6 Hz) 2.95; T 0.14 s (7.1 Hz) 1.41 (some falls). trot_gait: 0.32 / 1.02 / 0.43.
+- The trained flat policies score trot_gait 1.95 of 2.0 at 7 Hz (r9a). The GaitReward compares air/contact times in absolute seconds (std 0.1 s^2, max_err 0.2 s), so the same relative phase error costs more at a slow stride -> the reward's optimum is a fast stride. Open loop the scripted trot is not clean (duty ~0.75), so it is only an approximate reference.
+- The foot workspace is not the limit: +-30 deg per motor gives a 60 mm stroke at stance height (min trot 1.7 Hz at 0.20 m/s).
+- User: accept for now; the terrain should constrain fast stepping; tune later if needed.
+
+## Motor envelope (r9a, 0.20 m/s; scratchpad check_motor_limits.py)
+- Model: DCMotor, effort cap 0.129 N m (60% of the 0.215 stall), torque-speed line to 32.1 rad/s (80% no-load); the cap binds below 12.8 rad/s. KP 1 (hardware Test 18), KD 0 (not validated), friction 0.010, armature 2e-4; back-EMF damping not modelled; the cap and the curve are datasheet values, not identified.
+- Usage: joint speed p50 3.5 / p95 13.2 / max 19.2 rad/s; torque p95 0.129 (at the cap); 17% of samples on the envelope, all at the 0.129 cap, none speed-limited; tracking error p95 10.3 deg (cap reached at 7.4 deg with KP 1).
+- Higher lift at the same stride rate needs more speed and torque -> the envelope will force a trade-off on terrain. Its numbers are datasheet-based: a torque-speed / KP-KD identification on one XL330 is needed before trusting it for sim2real.
+
+## c1_teacher result (1500 it, model_1499; figures/isaac_eval/terrain/c1_teacher_it1499/, videos figures/isaac_play/terrain/c1_model_1499_*)
+- Training: mean terrain level plateaued at ~2.7 from it 300; speed 0.20-0.22 m/s; no falls; symmetry loss -> 0; track_lin 0.48, heading 0.56 at the end.
+- Terrain eval (500 envs, straight 0.20 m/s, 20 s, curriculum off, all levels): no real falls anywhere; progress 3.5-4.5 m; B level 4: 3.52 m, 0.194 m/s, 90% reach the promotion distance; C level 4: 4.07 m, 0.209 m/s, 100%. (The 0.27 "fall" at B level 4 is 13 out_of_terrain_bounds truncations: robots walking off the map edge from the last row; the eval counts truncations as falls -- to fix.)
+- So the level plateau is the promotion rule (low-speed commands cannot cover half a tile in 20 s and are never demoted), not ability.
+- The terrain is mild by design (B level 4 ~15 mm bumps, C step 18.4 mm = 50% of the stance-phase budget); c1 is probably not at its limit.
+- Height map check: teacher obs has 108 rays (35 mm grid, 0.385 x 0.28 m, yaw-aligned), scaled by 1/0.30 m; values follow the terrain (B level 1-4 range 4 / 8 / 11 / 15 mm raw), no misses.
+
+## h1_teacher_hard (side experiment, user): same config as c1 but Microtaur-Isaac-Teacher-Hard-v0 = no terrain curriculum, every robot on B / C level 4 from it 0.
+
+## c1 re-eval with heading / lateral drift (eval now separates falls from time-out truncations)
+- Straight 0.20 m/s for 20 s: |heading change| A 8-47 deg, B 19-28 deg, C 10-45 deg; |lateral drift| A 0.2-1.8 m, B 0.8-1.0 m, C 1.1-1.9 m (of ~4 m walked). No falls; B level 4: 15% out_of_terrain_bounds truncations.
+- C: the robot starts on the step boundary (y = 0, left half raised) but drifts 1.1-1.9 m sideways, i.e. leaves the straddle and walks on one flat side -> C's sustained left/right offset is avoided; "passing" C level 4 does not mean it learned the straddle.
+- Heading drift also on flat: heading_tracking + symmetry reduced the drift from tens of deg/s to ~1-2 deg/s, not to zero.
+- B is mild (user): heights ~N(0, 3.8 mm) clipped to [-7.6, +10.8] mm (the 50% budget is only the clip); level 4 measured -6.9..+8.4 mm, neighbouring cells differ 3-5 mm.
+- Proposed (user to decide): B sigma = budget (7.6 mm) and extra levels at 75% / 100% budget; C a raised strip about the left-right foot spacing wide (cannot avoid the straddle) or a larger heading weight on C; heading_tracking weight 1 -> 2 or sigma 0.2 -> 0.1 rad.
+- h1 stopped at ~it 330 (user): it had caught up with c1 (it 300: 0.177 vs 0.185 m/s, track 0.26 vs 0.30, no falls) -- on this mild terrain the curriculum makes little difference, which says nothing about harder terrain.
+
+## x1_teacher_hard2x (user: run the harder B and C straight, no comparison)
+- Microtaur-Isaac-Teacher-Hard2x-v0: terrain_scale 2 -> B clipped at -15.2 / +21.6 mm, sigma 7.6 mm (ground range under the scan ~30 mm), C step 36.8 mm = 100% of the stance-phase budget; every robot on level-4 B / C from it 0, no terrain curriculum. base_too_low is now relative to the median height-scan hit.
+- Same reward / commands / symmetry as c1; 2048 envs, 1500 it. C is still "left half raised": the robot can still drift off the boundary (watch |lateral| in the eval).
+
+## Speed-tracking ceiling (2026-09-26; scratchpad track_ceiling.py, straight commands on flat, 64-96 envs, 9.5 s)
+- The reward is exp(-|v_cmd - v|^2 / sigma^2) on the INSTANTANEOUS body velocity every policy step (vx and vy), so the within-stride ripple caps it even with a perfect mean speed: E = 1 / sqrt((1 + 2 sx^2/sigma^2)(1 + 2 sy^2/sigma^2)).
+- FK (five-bar, leg 1): stroke at stance height 60 mm within +-30 deg action scale (84 mm within the +-43 deg joint range); min trot rate at duty 0.5: 0.8 / 1.7 / 2.9 Hz for 0.10 / 0.20 / 0.35 m/s; stance motor rate 1.7 / 3.4 / 6.0 rad/s (limit 32 rad/s). Kinematically 0.35 m/s is easy and a constant-speed stance has zero ripple -> 1.0 is not kinematically excluded; the ceiling is dynamic ripple (touchdowns, diagonal-support sway, KP 1 servo, 35 ms steps).
+- Measured (actual / if the mean speed were perfect):
+  - r9a flat: ripple sx 0.04-0.05, sy 0.035-0.04 m/s; sigma 0.07: 0.55-0.60 / 0.55-0.63; sigma 0.12: 0.77-0.82 / 0.77-0.83 (mean already exact: all loss is ripple).
+  - c1 teacher on flat: bias +0.01..+0.04; sigma 0.07: 0.54-0.65; sigma 0.12: 0.77-0.86.
+  - x1 hard2x on flat: ignores slow commands (0.197 m/s at cmd 0.10), ripple sx 0.085 (2x); sigma 0.07: 0.22-0.45; sigma 0.12: 0.43-0.61.
+  - Scripted IK trot (reference_gait): 0.51-0.60 at sigma 0.07.
+- Reading: at sigma 0.07 the realistic best is ~0.6 per s (x1's 0.24 was half bias, half doubled ripple); sigma 0.12 (0.34 x v_max, legged_gym uses 0.5 m/s at 1 m/s) gives ~0.8 for a clean trot, 0.9 needs ripple ~0.03 m/s in both axes.
+
+## C lane rails (t1 prep)
+- Terminating on any rail touch (lane +-0.12 m) killed normal walking: x1 centred at y -3 cm with +-0.1 rad yaw wiggle brushes a rail (a 0.1 rad yaw moves a body corner 11 mm); ~60 terminations per 14 s over 18 C envs, also on level 0. Teacher-Cur now terminates only on mostly vertical body contacts (|Fz| >= |Fxy|): 1 termination (base_too_low, level 6), rails touched 5-30 % of steps, progress 2.0-3.5 m on levels 0-3.
+
+## t1_teacher_cur: PRONK (killed at it 1155) -- diagnosis (figures/isaac_eval/pronk_diag/)
+- Found by the user in the B video ("jumping all the time"), not by the numbers. Rule from now on: every round, and on early checkpoints (it 50-300), check frames AND gait type (flight fraction, 4-feet fraction, pair contact correlations, z bob) for pronk / bound / pace / hopping; stop a run as soon as a non-trot gait locks in.
+- Gait at model_950 (cmd 0.20): A flat flight 36 %, 4 feet 48 %, all pair correlations +0.8, z bob 21 mm, 6.4 Hz; B lvl 4 flight 25 %; C lvl 3 flight 28 %. A trot has diagonals +, other pairs -, ~0 flight (c1: +0.99 / -0.99, flight 0).
+- Onset (checkpoint sweep, level 0 flat, t1 weights): pronk index (mean of same-end and same-side correlations) +0.52 at it 50, +0.2-0.3 at 100-150, +0.48 at 200, +0.6-0.8 from 300. c1 / x1 reach a trot (index -0.5..-0.7) by it 100-200. The basin is chosen in the first 50-200 iterations, on flat level 0: the terrain curriculum is not involved. Whether the seed decides it is tested by p0 (seed 1).
+- The pronk is NOT the optimum of the t1 reward: c1's final trot scores 3.44 /s under t1 weights vs the t1 pronk 3.22 /s (trot_gait 0.997 vs 0.71, track_lin 0.80 vs 0.66, ang_vel_xy -0.037 vs -0.057). The earlier claim "the pronk avoids the roll penalty" was wrong.
+- Early on the half-learned pronk beats the half-learned trot (it 100-200: 2.4-2.8 vs 1.7-2.1 /s under t1 weights): heading_tracking (w 2) +0.5..0.6 (the early trot drifts in yaw, a symmetric pronk does not), posture (orientation -10 + ang_vel_xy -0.05) +0.15..0.24 (early trot rocks at 1.3-1.5 rad/s), action_rate +0.05..0.1; only trot_gait (w 1) favours the trot (-0.2..-0.27). Reading: a local optimum reached early, not a reward hack. Cross-policy comparison = correlation only -> ablations.
+- Ablations (t1 config, one change, 250 it, gait sweep at 150/200/249): p0 seed 1, p1 heading 1, p2 ang_vel_xy 0, p3 orientation -2.5, p4 trot 2. Results below.
+- p0_seed1 (t1 config, seed 1): same path as t1 -- it 50 same_side +0.54 (pace-like), it 200 flight 0.25, all pairs +0.4..0.6 (pronk); frames of model_200 (figures/isaac_play/pronk_diag/p0_model_200_flat_side_crop.png): near front and rear legs identical shape, both feet off the ground together. NOT a seed issue: the t1 reward config leads to the pronk. Frames of t1 model_50 / model_200 checked too (pace-like at 50, pronk at 200).
+- p1-p4 rerun at 200 it (pronk is clear by it 200), one change each from t1.
+- Ablation results at it 199 (gait sweep + side-view frames, critic subagent reviewed blind with c1 / t1 references):
+  - p1 heading 1: PRONK, stronger than t1 (flight 0.34, pairs +0.74/+0.66/+0.63, z 21 mm).
+  - p2 ang_vel_xy 0: no pronk but uncoordinated (diag +0.28, others ~0, flight 0.06); t1 itself was this undecided at it 100-150, so maybe only later.
+  - p3 orientation -2.5: shuffling at it 100 (vx 0.045), then crashed at 110: critic loss 0.07 -> 8e7 -> inf with normal returns and no NaN / root blow-up = a finite PhysX glitch reached the networks. Fixed: all observations clipped to +-100, physics_unstable also on |joint vel| > 500 rad/s (walking peaks 125-161 rad/s on the passive joints). Commit 97061b6.
+  - p4 trot_gait 2: diagonal pairs formed (+0.62) but the two pairs not anti-phase (same_end/side ~0, flight 0.19 = 0.45^2 for independent pairs), not a trot yet.
+  - Critic re-weighting of early trot vs early pronk checkpoints: trot minus pronk /s = -0.70 (t1 weights), -0.47 (p1), -0.59 (p2), -0.66 (p3), -0.55 (p4), -0.16 (all five c1 numbers). No single change removes the early pronk bias; heading (-0.47) and yaw tracking (-0.21) hurt the early trot most (a symmetric pronk barely yaws / rolls on this narrow track); trot_gait only +0.18. Also: at Microtaur's ~0.075 s phases the Spot GaitReward (std 0.1, max_err 0.2) scores a pronk 0.71 vs trot 0.997 -- weak separation.
+- t2_teacher_cur (launched 23:3x): c1 reward numbers while the gait forms (trot 2, heading 1, orientation -2.5, ang_vel_xy 0, sigma 0.07, feet_slide -0.1, air_time 1.0/0.2, action_rate -0.08), then at step 9600 (it 300, level 1 unlock) reward_schedule switches orientation to -10 (C posture, user) and sigma to 0.12 (tracking ceiling). Rationale: the gait basin is chosen in it 50-200 on flat; a converged trot scores above the pronk under t1 weights (3.44 vs 3.22), so switching after the trot forms should not flip it. Guard (scratchpad t2_guard.sh): gait sweep + frames at 50/100/150/200/300/400/500, auto-kill if same_end > 0.2, same_side > 0.2 and flight > 0.15 from it 150. On-track targets (critic, from c1's path): it 100 diag >= +0.5, same_end/side <= -0.4, flight <= 0.1; it 300 same_end/side <= -0.6.
+
+## t2_teacher_cur result (3000 it, model_2999) -- trot kept, C posture learned
+- Gait (flat, gait sweep): it 100 diag +0.56 / others -0.45; 300 +0.73 / -0.70; 500 +0.83 / -0.79; 1000 +0.95 / -0.95; 1500 +0.99 / -0.99; 2999 +0.98 / -0.98, flight 0, z bob 3.6 mm, 7.1 Hz. Frames checked at every guard point: near legs alternate. The it-300 switch (orientation -10, sigma 0.12) did not disturb the trot.
+- C posture (isaac_c_posture.py, stance FK leg length left(raised) - right, roll + = left up):
+  - lvl 3 (18.4 mm): it 500 roll 11.5 deg / dr +2.0 mm -> 1000 4.6 / -8.8 -> 1500 0.1 / -16.8 -> 2999 1.1 / -14.3 (78 % of the step).
+  - lvl 6 (36.8 mm): 1000 19.0 / -3.8 -> 1500 9.1 / -20.5 -> 2000 4.3 / -27.6 -> 2999 3.1 / -30.2 (82 %).
+- Terrain eval (figures/isaac_eval/terrain_cur/t2_2999/terrain_eval.log, 500 envs, straight 0.20 m/s, 20 s): no falls anywhere. C lanes all levels 0.18-0.23 m/s, lateral 2-4 cm, |dyaw| <= 5.5 deg. B speed 0.24 (lvl 0) -> 0.14 m/s (lvl 6), |dyaw| 11 -> 36 deg; run-out row 7/30 left the map (out_of_terrain_bounds). A flat 0.245 m/s at cmd 0.20 (+22 %), |dyaw| 6-27 deg, lateral 0.5-1.1 m over 5 m.
+- Videos (figures/isaac_play/terrain_cur/t2_model_2999_{C_lvl6,C_lvl3,B_lvl6,B_runout,A_flat}.mp4): all without resets; C lvl 6 3.0 m in 14.7 s straddling the step with a level body; B lvl 6 frames: alternating near legs, no flight.
+- Open: heading drift on A/B (no rails there), overspeed on flat (+22 %), B lvl 5-6 slow (0.14-0.15 m/s, 70 % of cmd); C lvl 6 compensation 82 % (roll 3 deg).
