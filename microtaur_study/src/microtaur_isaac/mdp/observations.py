@@ -324,6 +324,9 @@ class MicrotaurObservationsCfg:
   teacher: ObsGroup | None = None
 
 
+OBS_CLIP = 100.0  # far above any normal value (joint speed <= 32 rad/s, log forces < 10, air time <= 20 s)
+
+
 def make_observations_cfg(
   stage: Sim2RealStage, rough: bool = False, teacher: bool = False, play: bool = False
 ) -> MicrotaurObservationsCfg:
@@ -336,6 +339,12 @@ def make_observations_cfg(
     cfg.policy.enable_corruption = False
     if cfg.teacher is not None:
       cfg.teacher.enable_corruption = False
+  # Clip every term: a finite PhysX glitch (e.g. a leg joint of the closed chain at 1e4 rad/s
+  # while the root is calm) must not reach the networks (p3 ablation: critic loss 0.07 -> inf).
+  for group in (cfg.policy, cfg.critic, cfg.teacher):
+    if group is not None:
+      for term in group_terms(group).values():
+        term.clip = (-OBS_CLIP, OBS_CLIP)
   validate_observation_contract(cfg, rough=rough)
   return cfg
 

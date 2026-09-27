@@ -50,6 +50,7 @@ OUT_OF_BOUNDS_MARGIN_M = 0.3
 # Far above anything physical for a 0.54 kg robot 7 cm tall.
 UNSTABLE_LIN_VEL_M_S = 5.0
 UNSTABLE_ANG_VEL_RAD_S = 100.0
+UNSTABLE_JOINT_VEL_RAD_S = 500.0  # passive closed-chain joints peak at 125-161 rad/s when walking; a glitch reads far more
 
 
 def root_too_low(
@@ -114,7 +115,8 @@ def physics_unstable(
   bad = ~torch.isfinite(state).all(dim=1)
   lin = torch.nan_to_num(torch.linalg.norm(d.root_link_lin_vel_w, dim=1), nan=0.0)
   ang = torch.nan_to_num(torch.linalg.norm(d.root_link_ang_vel_w, dim=1), nan=0.0)
-  return bad | (lin > max_lin_vel) | (ang > max_ang_vel)
+  qd = torch.nan_to_num(d.joint_vel.abs(), nan=0.0).amax(dim=1)
+  return bad | (lin > max_lin_vel) | (ang > max_ang_vel) | (qd > UNSTABLE_JOINT_VEL_RAD_S)
 
 
 @configclass
