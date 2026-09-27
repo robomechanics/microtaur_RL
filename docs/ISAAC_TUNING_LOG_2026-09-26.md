@@ -290,3 +290,18 @@ the top-view path and the videos before judging. Folders are
 - Terrain eval (figures/isaac_eval/terrain_cur/t2_2999/terrain_eval.log, 500 envs, straight 0.20 m/s, 20 s): no falls anywhere. C lanes all levels 0.18-0.23 m/s, lateral 2-4 cm, |dyaw| <= 5.5 deg. B speed 0.24 (lvl 0) -> 0.14 m/s (lvl 6), |dyaw| 11 -> 36 deg; run-out row 7/30 left the map (out_of_terrain_bounds). A flat 0.245 m/s at cmd 0.20 (+22 %), |dyaw| 6-27 deg, lateral 0.5-1.1 m over 5 m.
 - Videos (figures/isaac_play/terrain_cur/t2_model_2999_{C_lvl6,C_lvl3,B_lvl6,B_runout,A_flat}.mp4): all without resets; C lvl 6 3.0 m in 14.7 s straddling the step with a level body; B lvl 6 frames: alternating near legs, no flight.
 - Open: heading drift on A/B (no rails there), overspeed on flat (+22 %), B lvl 5-6 slow (0.14-0.15 m/s, 70 % of cmd); C lvl 6 compensation 82 % (roll 3 deg).
+- C mirrored test (user idea: spawn at the far end of the lane facing -x, raised side on the robot's right; c_reverse_frac, isaac_c_posture --reverse): t2 model_2999 was never trained this way (only rsl_rl mirror augmentation) and is mirror-symmetric: lvl 3 roll -1.1 deg / dr +14.2 mm (trained dir +1.1 / -14.3), lvl 6 -3.4 / +29.7 (trained +3.1 / -30.2), no resets. Mirror augmentation carries the posture to the other side.
+
+## Servo command vs response (t2 model_2999, flat 0.20 m/s; scripts/isaac_servo_curves.py; figures/isaac_eval/servo_curves/t2_2999/)
+- Commands are 28.6 Hz steps (the safety filter passes them unchanged, 1-step delay); 20 % of all motor actions sit at the +-1 bound (e.g. leg1 a at stand - 30 deg).
+- Joint motion is already smooth and periodic (KP 1 compliant servo low-passes the steps): foot path in the leg plane x +-9 mm, lift ~10 mm, CPG-like. The joint overshoots its step target (leg1 a reaches +6 deg on a +2.7 deg target): the policy drives the servo with step "impulses" and relies on the modelled step response -> validate the XL330 step response on hardware.
+- Linear interpolation of the target over the 14 substeps (patched, no retraining): torque rate rms 14.6 -> 5.5 N m/s (-62 %), actuator target step rms -75 %, joint acc rms unchanged (581 -> 602, dominated by contacts); but t2 without retraining degrades (trot corr 0.99 -> 0.49, speed 0.245 -> 0.164) -> needs (warm-start) retraining with the interpolation in the loop.
+
+## Stride experiments from scratch (t2 config + one change, 500 it; figures/isaac_eval/stride_exp/) -- user keeps 7 Hz, kept for reference
+| run | change | it 499 gait (diag / same_end / flight) | stride flat | lift / FK retraction flat | speed at cmd 0.10 / 0.20 / 0.35 | B6 / C6 speed |
+|---|---|---|---|---|---|---|
+| t2 (ref, it 500) | -- | +0.83 / -0.79 / 0.02 | 6.4 Hz (7.1 final) | 12.8 / 10.8 mm (final) | -- | -- |
+| s1_air2 | feet_air_time 1 -> 2 | +0.82 / -0.81 / 0.02 | 5.3 Hz | 29 / 25 mm | 0.11 / 0.20 / 0.32 | 0.07 / 0.01 (level 1 only unlocked) |
+| s2_mode03 | air mode_time 0.2 -> 0.3 s | +0.82 / -0.81 / 0.01 | 5.8 Hz | 26 / 22.5 mm | 0.13 / 0.22 / 0.35 | 0.04 / 0.00 |
+| s3_fastterrain | 1 level per 50 it | +0.72 / -0.71 / 0.03 | 5.7 Hz | 31 / 25 mm (36 mm on B6) | 0.19 / 0.20 / 0.21 (ignores the command) | 0.15 / 0.12 |
+- All three trot (frames checked). Early harder terrain (s3, like x1) and a larger air-time reward (s1) both lower the stride and raise a terrain-independent foot lift (useful for a blind student); s3 loses speed-command following. Motor load is not lower at the slower stride (s1: same speed p95, more time at the torque cap).
