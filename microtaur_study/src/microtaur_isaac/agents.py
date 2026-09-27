@@ -7,7 +7,16 @@ upstream): 512-256-128 ELU actor and critic, init std 1.0, 32-step rollouts.
 from __future__ import annotations
 
 from isaaclab.utils import configclass
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg, RslRlSymmetryCfg
+from isaaclab_rl.rsl_rl import (
+  RslRlDistillationAlgorithmCfg,
+  RslRlDistillationRunnerCfg,
+  RslRlDistillationStudentTeacherCfg,
+  RslRlDistillationStudentTeacherRecurrentCfg,
+  RslRlOnPolicyRunnerCfg,
+  RslRlPpoActorCriticCfg,
+  RslRlPpoAlgorithmCfg,
+  RslRlSymmetryCfg,
+)
 
 from .mdp.symmetry import compute_symmetric_states
 
@@ -68,3 +77,57 @@ class MicrotaurPPORunnerSymCfg(MicrotaurPPORunnerCfg):
 @configclass
 class MicrotaurTeacherPPORunnerSymCfg(MicrotaurTeacherPPORunnerCfg):
   algorithm = _with_symmetry(MicrotaurTeacherPPORunnerCfg().algorithm)
+
+
+# -----------------------------------------------------------------------------
+# Student distillation (rsl_rl DistillationRunner, DAgger-style: the student acts,
+# loss = MSE to the frozen teacher's action). The teacher is loaded from a PPO
+# checkpoint of MicrotaurTeacherPPORunnerCfg (its "actor." weights); the student
+# reads only the deployment-compatible "policy" group (no height map, no base
+# linear velocity). experiment_name is the teacher's, so --load_run / --checkpoint
+# (agent.load_run / agent.load_checkpoint) find the teacher run directly.
+# -----------------------------------------------------------------------------
+_TEACHER_DIMS = [512, 256, 128]
+
+
+@configclass
+class MicrotaurStudentMLPRunnerCfg(RslRlDistillationRunnerCfg):
+  """MLP student; give it history with env.observations.policy.history_length=<n>."""
+  num_steps_per_env = 64
+  max_iterations = 1500
+  save_interval = 50
+  experiment_name = "microtaur_isaac_teacher"
+  obs_groups = {"policy": ["policy"], "teacher": ["teacher"]}
+  policy = RslRlDistillationStudentTeacherCfg(
+    init_noise_std=0.1,
+    noise_std_type="scalar",
+    student_obs_normalization=True,
+    teacher_obs_normalization=False,
+    student_hidden_dims=[512, 256, 128],
+    teacher_hidden_dims=_TEACHER_DIMS,
+    activation="elu",
+  )
+  algorithm = RslRlDistillationAlgorithmCfg(
+    num_learning_epochs=2,
+    learning_rate=1.0e-3,
+    gradient_length=15,
+    max_grad_norm=1.0,
+  )
+
+
+@configclass
+class MicrotaurStudentGRURunnerCfg(MicrotaurStudentMLPRunnerCfg):
+  """Recurrent (GRU) student: the memory replaces an explicit observation history."""
+  policy = RslRlDistillationStudentTeacherRecurrentCfg(
+    init_noise_std=0.1,
+    noise_std_type="scalar",
+    student_obs_normalization=True,
+    teacher_obs_normalization=False,
+    student_hidden_dims=[256, 128],
+    teacher_hidden_dims=_TEACHER_DIMS,
+    activation="elu",
+    rnn_type="gru",
+    rnn_hidden_dim=256,
+    rnn_num_layers=1,
+    teacher_recurrent=False,
+  )

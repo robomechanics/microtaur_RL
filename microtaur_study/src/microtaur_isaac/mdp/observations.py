@@ -250,6 +250,9 @@ class ActorObsCfg(ObsGroup):
   joint_vel: ObsTerm = _obs_legs(joint_vel)
   actions: ObsTerm = ObsTerm(func=il_mdp.last_action)
   command: ObsTerm = ObsTerm(func=il_mdp.generated_commands, params={"command_name": COMMAND_NAME})
+  # Frames stacked per term (0 = none). An int default (IsaacLab's is None) so Hydra can set it:
+  # env.observations.policy.history_length=15 for an MLP student.
+  history_length: int = 0
 
   def __post_init__(self):
     self.enable_corruption = True

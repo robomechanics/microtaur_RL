@@ -76,5 +76,8 @@ for _name, _cfg in (
       # left/right symmetry augmentation: train.py --agent rsl_rl_sym_cfg_entry_point
       "rsl_rl_sym_cfg_entry_point": "microtaur_isaac.agents:"
       + ("MicrotaurTeacherPPORunnerSymCfg" if _name.startswith("Teacher") else "MicrotaurPPORunnerSymCfg"),
+      # student distillation from a teacher checkpoint: --agent rsl_rl_student_{mlp,gru}_cfg_entry_point
+      "rsl_rl_student_mlp_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentMLPRunnerCfg",
+      "rsl_rl_student_gru_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentGRURunnerCfg",
     },
   )

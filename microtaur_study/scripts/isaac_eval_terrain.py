@@ -55,6 +55,7 @@ from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 from microtaur_isaac import terrains as TR  # noqa: E402
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg, MicrotaurTeacherPlayEnvCfg  # noqa: E402
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg  # noqa: E402
 
 y = Path(args.checkpoint).parent / "params" / "env.yaml"
 if args.terrain_scale is None:
@@ -69,11 +70,10 @@ cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)
 m = re.search(r"action_scale_rad: ([0-9.eE+-]+)", y.read_text()) if y.exists() else None
 if m:
   cfg.actions.joint_pos.action_scale_rad = float(m.group(1))
+prepare_env_cfg(cfg, args.checkpoint)
 env = ManagerBasedRLEnv(cfg)
 wrapped = RslRlVecEnvWrapper(env)
-runner = OnPolicyRunner(wrapped, MicrotaurTeacherPPORunnerCfg().to_dict(), log_dir=None, device=env.device)
-runner.load(args.checkpoint)
-policy = runner.get_inference_policy(device=env.device)
+policy, policy_reset = load_policy(wrapped, args.checkpoint)
 
 robot = env.scene["robot"]
 terrain = env.scene.terrain
@@ -111,6 +111,7 @@ with torch.inference_mode():
     pin()
     prev = d.root_link_pos_w[:, :2].clone()
     obs, _, dones, _ = wrapped.step(policy(obs))
+    policy_reset(dones)
     now = torch.where(dones[:, None].bool(), prev, d.root_link_pos_w[:, :2])  # a reset moves the root: keep the last pose
     p = torch.sum((now - start) * fwd, dim=1)
     progress = torch.where(alive, p, progress)

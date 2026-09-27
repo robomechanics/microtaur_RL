@@ -37,6 +37,7 @@ from microtaur_isaac import FOOT_BODY_NAMES, FOOT_OFFSET_IN_BODY_M  # noqa: E402
 from microtaur_isaac import terrains as TR  # noqa: E402
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg  # noqa: E402
 from microtaur_isaac.mdp.contact import foot_contact_timers  # noqa: E402
 from microtaur_isaac.mdp.observations import feet_sensor_cfg  # noqa: E402
 
@@ -46,14 +47,13 @@ cfg = MicrotaurTeacherCurPlayEnvCfg()
 cfg.scene.num_envs = N
 cfg.curriculum.command_ranges = None
 cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)
+prepare_env_cfg(cfg, args.checkpoint)
 env = ManagerBasedRLEnv(cfg)
 t = env.scene.terrain
 t.terrain_levels[:] = torch.tensor([LV[i % 3] for i in range(N)], device=env.device)
 t.env_origins[:] = t.terrain_origins[t.terrain_levels, t.terrain_types]
 w = RslRlVecEnvWrapper(env)
-runner = OnPolicyRunner(w, MicrotaurTeacherPPORunnerCfg().to_dict(), log_dir=None, device=env.device)
-runner.load(args.checkpoint)
-policy = runner.get_inference_policy(device=env.device)
+policy, policy_reset = load_policy(w, args.checkpoint)
 robot = env.scene["robot"]
 cmd = env.command_manager.get_term("twist")
 fc = feet_sensor_cfg()
@@ -78,6 +78,7 @@ with torch.inference_mode():
     cmd.vel_command_b[:, 0] = args.speed
     cmd.vel_command_b[:, 1:] = 0.0
     obs, _, dones, _ = w.step(policy(obs))
+    policy_reset(dones)
     cur = feet()
     v = torch.linalg.norm((cur - prev)[..., :2], dim=-1) / dt
     prev = cur

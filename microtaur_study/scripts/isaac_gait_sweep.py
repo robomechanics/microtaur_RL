@@ -16,6 +16,7 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from rsl_rl.runners import OnPolicyRunner
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg
 from microtaur_isaac.mdp.contact import foot_contact_timers
 from microtaur_isaac.mdp.observations import feet_sensor_cfg
 N = 192
@@ -29,10 +30,10 @@ for kv in args.set:
 for k, v in T1.items(): getattr(rw, k).weight = v
 rw.trot_gait.params["std"] = 0.1; rw.trot_gait.params["max_err"] = 0.2
 rw.track_lin_vel_xy.params["sigma"] = 0.12; rw.feet_air_time.params["mode_time_s"] = 0.2
+prepare_env_cfg(cfg, args.ckpts[0].split('=', 1)[1])  # all checkpoints must share the actor history
 env = ManagerBasedRLEnv(cfg)
 t = env.scene.terrain; t.terrain_levels[:] = 0; t.env_origins[:] = t.terrain_origins[0, t.terrain_types]
 w = RslRlVecEnvWrapper(env)
-runner = OnPolicyRunner(w, MicrotaurTeacherPPORunnerCfg().to_dict(), log_dir=None, device=env.device)
 cmd = env.command_manager.get_term("twist"); robot = env.scene["robot"]; rm = env.reward_manager
 fc = feet_sensor_cfg(); fc.resolve(env.scene)
 SPEEDS = torch.tensor([0.10, 0.20, 0.35], device=env.device)[torch.arange(N, device=env.device) % 3]
@@ -43,13 +44,14 @@ def corr(a, b):
 res = {}
 for spec in args.ckpts:
   label, path = spec.split("=", 1)
-  runner.load(path); policy = runner.get_inference_policy(device=env.device)
+  policy, policy_reset = load_policy(w, path)
   C, RW, Z, VX, RR, PR, D = [], [], [], [], [], [], []
   with torch.inference_mode():
     env.reset(); obs = w.get_observations()
     for k in range(60 + args.steps):
       cmd.vel_command_b[:, 0] = SPEEDS; cmd.vel_command_b[:, 1:] = 0.0
       obs, _, dones, _ = w.step(policy(obs))
+      policy_reset(dones)
       if k < 60: continue
       C.append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
       RW.append(rm._step_reward.cpu().numpy().copy())
