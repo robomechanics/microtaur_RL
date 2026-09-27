@@ -290,8 +290,9 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.curriculum.command_ranges = C.make_command_curriculum_term(play=self.play)
     self.curriculum.energy_weight = R.make_energy_curriculum_term()
     if self.rough:
-      self.curriculum.terrain_levels = CurriculumTermCfg(
-        func=terrain_levels_progress if self.cur_terrain else terrain_levels_from_spawn)
+      self.curriculum.terrain_levels = (
+        CurriculumTermCfg(func=terrain_levels_progress, params={"steps_per_level": 300 * 32}) if self.cur_terrain
+        else CurriculumTermCfg(func=terrain_levels_from_spawn))
     if self.play:
       self.episode_length_s = 1.0e9
       if self.rough:
