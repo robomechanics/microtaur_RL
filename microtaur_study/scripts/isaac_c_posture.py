@@ -25,6 +25,7 @@ ap.add_argument("--checkpoint", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--speed", type=float, default=0.20)
 ap.add_argument("--steps", type=int, default=400)
+ap.add_argument("--reverse", action="store_true", help="walk the lane in -x: raised side on the robot's RIGHT")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
@@ -51,6 +52,7 @@ out.mkdir(parents=True, exist_ok=True)
 N = 60  # 6 per column -> C columns 7-9 = envs 42..59
 cfg = MicrotaurTeacherCurPlayEnvCfg()
 cfg.scene.num_envs = N
+cfg.c_reverse_frac = 1.0 if args.reverse else 0.0
 cfg.curriculum.command_ranges = None
 cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)
 env = ManagerBasedRLEnv(cfg)
@@ -98,7 +100,7 @@ for L in LV:
   roll, dr, rl, rr = [], [], [], []
   for e in sel:
     alive = np.cumsum(R["done"][:, e]) == 0
-    on = alive & (R["x"][:, e] > x0 + 0.15) & (R["x"][:, e] < x1)
+    on = alive & ((R["x"][:, e] > x0) & (R["x"][:, e] < x1 - 0.15) if args.reverse else (R["x"][:, e] > x0 + 0.15) & (R["x"][:, e] < x1))
     for s in np.nonzero(on)[0]:
       r = np.array([np.hypot(*(lambda f: (f.foot_x, f.foot_z))(KIN.forward_numpy(R["q"][s, e, 2 * j], R["q"][s, e, 2 * j + 1], j + 1))) for j in range(4)])
       left = R["fy"][s, e] > 0
@@ -115,7 +117,8 @@ for L in LV:
   f = lambda v: "n/a" if v is None else f"{v:+.1f}"  # noqa: E731
   lines.append(f"{L:3d} | {h:7.1f} | {row['n']:9d} | {f(row['roll_deg']):>8s} | {f(row['dr_left_minus_right_mm']):>8s} | "
                f"{f(row['r_left_mm']):>7s} | {f(row['r_right_mm']):>7s} | {row['resets']}")
-lines.append("target on a level body: r_left - r_right ~= -step height (legs on the raised left side shorter), roll ~ 0")
+lines.append("REVERSED (raised side on the robot's right): target r_left - r_right ~= +step height, roll ~ 0" if args.reverse else
+             "target on a level body: r_left - r_right ~= -step height (legs on the raised left side shorter), roll ~ 0")
 (out / "c_posture.txt").write_text("\n".join(lines) + "\n")
 (out / "c_posture.json").write_text(json.dumps(res, indent=1))
 print("\n".join(lines), flush=True)

@@ -68,6 +68,13 @@ def terrain_spawn(env, ids, xy, yaw):
   is_c, is_b = types == 2, types == 1
   xy[is_c] = torch.tensor(TR.C_SPAWN_OFFSET_XY, device=xy.device, dtype=xy.dtype)
   yaw[is_c] = TR.C_SPAWN_YAW_RAD
+  # A fraction of C spawns start at the far end of the lane facing -x: the raised half
+  # (tile y > 0) is then on the robot's right (the course is symmetric along x).
+  frac = float(getattr(env.cfg, "c_reverse_frac", 0.0))
+  if frac > 0.0 and torch.any(is_c):
+    rev = is_c & (torch.rand(len(ids), device=xy.device) < frac)
+    xy[rev, 0] = -TR.C_SPAWN_OFFSET_XY[0]
+    yaw[rev] = TR.C_SPAWN_YAW_RAD + math.pi
   if torch.any(is_b):
     lx, ly = TR.TILE_SIZE_M
     nb = int(is_b.sum())
@@ -238,6 +245,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
   play: bool = False
   terrain_scale: float = 1.0  # rough only: B heights and the C step x this (terrains.scaled_terrains_cfg)
   cur_terrain: bool = False  # rough only: 7-level railed-C terrain + run-out row, commanded-distance curriculum
+  c_reverse_frac: float = 0.0  # fraction of C spawns walking the lane in -x (raised side on the robot's right)
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=2048, env_spacing=0.5)
 
   def __post_init__(self):
