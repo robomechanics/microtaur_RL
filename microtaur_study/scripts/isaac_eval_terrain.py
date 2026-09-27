@@ -32,6 +32,8 @@ ap.add_argument("--speed", type=float, default=0.20)
 ap.add_argument("--seconds", type=float, default=20.0)
 ap.add_argument("--terrain-scale", type=float, default=None,
                 help="B heights / C step multiplier (default: read terrain_scale from <ckpt dir>/params/env.yaml, else 1)")
+ap.add_argument("--blind", action="store_true",
+                help="blindfolded teacher: its height map reads flat ground at the tile origin height")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
@@ -74,6 +76,20 @@ prepare_env_cfg(cfg, args.checkpoint)
 env = ManagerBasedRLEnv(cfg)
 wrapped = RslRlVecEnvWrapper(env)
 policy, policy_reset = load_policy(wrapped, args.checkpoint)
+if args.blind:
+  om = env.observation_manager
+  for group in om.active_terms:
+    if "height_scan" in om.active_terms[group]:
+      tc = om._group_obs_term_cfgs[group][om.active_terms[group].index("height_scan")]
+
+      def _flat_scan(env, **kw):
+        max_distance = kw.get("max_distance", 0.3)
+        hits = env.scene.sensors[kw.get("sensor_name", "height_scanner")].data.ray_hits_w
+        h = env.scene["robot"].data.root_link_pos_w[:, 2:3] - env.scene.env_origins[:, 2:3]
+        return torch.clamp(h, max=max_distance).expand(-1, hits.shape[1]).clone()
+
+      tc.func = _flat_scan
+      log(f"BLIND: {group}/height_scan replaced by flat ground at the env origin height")
 
 robot = env.scene["robot"]
 terrain = env.scene.terrain

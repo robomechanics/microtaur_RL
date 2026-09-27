@@ -160,6 +160,19 @@ def hard_terrain_placement(env, env_ids) -> None:
   terrain.env_origins[:] = terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
 
 
+def init_terrain_levels(env, env_ids, level_range: tuple[int, int]) -> None:
+  """Startup: every env's initial terrain level uniform in [lo, hi] (IsaacLab can only give 0..max),
+  e.g. (1, 2) = easy but not flat. The curriculum takes over from there."""
+  terrain = env.scene.terrain
+  if getattr(terrain, "terrain_levels", None) is None:
+    return
+  lo, hi = int(level_range[0]), int(level_range[1])
+  if lo < 0:
+    return
+  terrain.terrain_levels[:] = torch.randint(lo, hi + 1, terrain.terrain_levels.shape, device=terrain.terrain_levels.device)
+  terrain.env_origins[:] = terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
+
+
 def terrain_flags(env, env_ids) -> None:
   """Startup: env.microtaur_zero_yaw_mask = True on terrain C (straight commands only)."""
   terrain = env.scene.terrain
@@ -286,6 +299,10 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.events = _Events()
     for k, v in _events(s2r, self.play, self.rough).items():
       setattr(self.events, k, v)
+    if self.rough:
+      # (-1, -1) = off; set with env.events.init_terrain_levels.params.level_range=[lo,hi]
+      self.events.init_terrain_levels = EventTermCfg(func=init_terrain_levels, mode="startup",
+                                                     params={"level_range": (-1, -1)})
     self.curriculum = _Curriculum()
     self.curriculum.command_ranges = C.make_command_curriculum_term(play=self.play)
     self.curriculum.energy_weight = R.make_energy_curriculum_term()
