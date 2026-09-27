@@ -54,13 +54,15 @@ from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 
 from microtaur_isaac import terrains as TR  # noqa: E402
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg  # noqa: E402
-from microtaur_isaac.env_cfg import MicrotaurTeacherPlayEnvCfg  # noqa: E402
+from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg, MicrotaurTeacherPlayEnvCfg  # noqa: E402
 
 y = Path(args.checkpoint).parent / "params" / "env.yaml"
 if args.terrain_scale is None:
   m = re.search(r"^terrain_scale: ([0-9.eE+-]+)", y.read_text(), re.M) if y.exists() else None
   args.terrain_scale = float(m.group(1)) if m else 1.0
-cfg = MicrotaurTeacherPlayEnvCfg(terrain_scale=args.terrain_scale)
+# Teacher-Cur runs (railed C lane, 7 levels + run-out row) are evaluated on their own terrain.
+cur = y.exists() and re.search(r"^cur_terrain: true", y.read_text(), re.M) is not None
+cfg = (MicrotaurTeacherCurPlayEnvCfg if cur else MicrotaurTeacherPlayEnvCfg)(terrain_scale=args.terrain_scale)
 cfg.scene.num_envs = args.num_envs
 cfg.curriculum.command_ranges = None
 cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)
@@ -127,7 +129,7 @@ with torch.inference_mode():
 half_tile = TR.TILE_SIZE_M[0] / 2
 names = ("A_flat", "B_blocks", "C_step")
 rows = []
-log(f"checkpoint {args.checkpoint}\nterrain scale {args.terrain_scale}; straight {args.speed} m/s for {args.seconds} s; promotion distance (half a tile) {half_tile:.2f} m\n")
+log(f"checkpoint {args.checkpoint}\n{'Teacher-Cur terrain; ' if cur else ''}terrain scale {args.terrain_scale}; straight {args.speed} m/s for {args.seconds} s; promotion distance (half a tile) {half_tile:.2f} m\n")
 log(f"{'terrain':9s} {'lvl':>3s} {'n':>4s} {'fall':>6s} {'trunc':>6s} {'progress m':>11s} {'>= half tile':>12s} {'speed m/s':>10s} {'|dyaw| deg':>11s} {'|lateral| m':>12s}  causes")
 for ty in range(3):
   for lv in range(int(levels.max()) + 1):
