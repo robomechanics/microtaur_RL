@@ -399,8 +399,10 @@ class MicrotaurTeacherCurEnvCfg(MicrotaurTeacherEnvCfg):
     # The C guard rails guide, they do not end the episode (a centred trot with +-0.1 rad
     # yaw wiggle brushes a rail at 0.12 m); only the body landing on the ground terminates.
     self.terminations.illegal_contact.params["vertical_only"] = True
-    # Staged reward weights / params (empty = off); set stages via Hydra, see R.reward_schedule.
-    self.curriculum.reward_schedule = CurriculumTermCfg(func=R.reward_schedule, params={"stages": []})
+    # Staged reward weights / params, see R.reward_schedule. One inert stage by default: IsaacLab's
+    # cfg update rejects a Hydra list override whose length differs from the default.
+    self.curriculum.reward_schedule = CurriculumTermCfg(
+      func=R.reward_schedule, params={"stages": ["off"]})
 
 
 @configclass
