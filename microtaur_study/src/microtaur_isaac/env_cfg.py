@@ -319,6 +319,7 @@ class _Events:
 class _Curriculum:
   command_ranges: object = None
   energy_weight: object = None
+  reward_schedule: object = None
 
 
 @configclass
@@ -398,6 +399,8 @@ class MicrotaurTeacherCurEnvCfg(MicrotaurTeacherEnvCfg):
     # The C guard rails guide, they do not end the episode (a centred trot with +-0.1 rad
     # yaw wiggle brushes a rail at 0.12 m); only the body landing on the ground terminates.
     self.terminations.illegal_contact.params["vertical_only"] = True
+    # Staged reward weights / params (empty = off); set stages via Hydra, see R.reward_schedule.
+    self.curriculum.reward_schedule = CurriculumTermCfg(func=R.reward_schedule, params={"stages": []})
 
 
 @configclass

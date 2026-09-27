@@ -314,6 +314,24 @@ def reward_weight_stages(env: ManagerBasedRLEnv, env_ids, reward_name: str, stag
   return {"weight": torch.tensor(float(term.weight)), "step": torch.tensor(float(step))}
 
 
+def reward_schedule(env: ManagerBasedRLEnv, env_ids, stages: Sequence[dict]) -> dict:
+  """Curriculum: apply the last stage whose "step" (policy steps, common_step_counter)
+  has been reached. A stage is {"step": int, "weights": {term: w}, "params": {term: {k: v}}};
+  both dicts optional. Before the first stage the cfg values stay. Used to let the gait
+  form under one reward set and switch others in later (pronk diagnosis 2026-09-26)."""
+  del env_ids
+  step = int(env.common_step_counter)
+  reached = [i for i, s in enumerate(stages or []) if step >= s["step"]]
+  if reached:
+    st = stages[reached[-1]]
+    rm = env.reward_manager
+    for name, w in (st.get("weights") or {}).items():
+      cfg = rm.get_term_cfg(name); cfg.weight = float(w); rm.set_term_cfg(name, cfg)
+    for name, kv in (st.get("params") or {}).items():
+      cfg = rm.get_term_cfg(name); cfg.params.update({k: float(v) for k, v in kv.items()}); rm.set_term_cfg(name, cfg)
+  return {"stage": torch.tensor(float(reached[-1] + 1 if reached else 0))}
+
+
 def make_energy_curriculum_term(energy_weight: float | None = None) -> CurriculumTermCfg:
   """energy_weight is the ramp's final value (default WEIGHTS['motor_energy'];
   negative, since motor_energy returns a positive cost)."""
