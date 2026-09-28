@@ -64,6 +64,7 @@ for _name, _cfg in (
   ("Teacher-Hard", "MicrotaurTeacherHardEnvCfg"), ("Teacher-Hard-Play", "MicrotaurTeacherHardPlayEnvCfg"),
   ("Teacher-Hard2x", "MicrotaurTeacherHard2xEnvCfg"), ("Teacher-Hard2x-Play", "MicrotaurTeacherHard2xPlayEnvCfg"),
   ("Teacher-Cur", "MicrotaurTeacherCurEnvCfg"), ("Teacher-Cur-Play", "MicrotaurTeacherCurPlayEnvCfg"),
+  ("Teacher-Cur-Student", "MicrotaurTeacherCurStudentEnvCfg"), ("Teacher-Cur-Student-Play", "MicrotaurTeacherCurStudentPlayEnvCfg"),
 ):
   gym.register(
     id=f"Microtaur-Isaac-{_name}-v0",
@@ -79,5 +80,8 @@ for _name, _cfg in (
       # student distillation from a teacher checkpoint: --agent rsl_rl_student_{mlp,gru}_cfg_entry_point
       "rsl_rl_student_mlp_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentMLPRunnerCfg",
       "rsl_rl_student_gru_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentGRURunnerCfg",
+      # 47-D student group (Teacher-Cur-Student tasks): MLP (use history_length) / small MLP
+      "rsl_rl_student_v2_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentV2RunnerCfg",
+      "rsl_rl_student_v2_small_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentV2SmallRunnerCfg",
     },
   )

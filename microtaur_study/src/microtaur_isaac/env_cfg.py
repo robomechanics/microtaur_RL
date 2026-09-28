@@ -260,6 +260,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
   terrain_scale: float = 1.0  # rough only: B heights and the C step x this (terrains.scaled_terrains_cfg)
   cur_terrain: bool = False  # rough only: 7-level railed-C terrain + run-out row, commanded-distance curriculum
   c_reverse_frac: float = 0.0  # fraction of C spawns walking the lane in -x (raised side on the robot's right)
+  student_obs: bool = False  # add the 47-D deployable "student" group (2 IMUs, FK) for distillation
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=2048, env_spacing=0.5)
 
   def __post_init__(self):
@@ -287,7 +288,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
         _height_scanner(0.05, (0.40, 0.30))
 
     self.observations = O.make_observations_cfg(s2r, rough=self.rough and not self.teacher,
-                                                teacher=self.teacher, play=self.play)
+                                                teacher=self.teacher, play=self.play, student=self.student_obs)
     self.actions = _Actions()
     self.actions.joint_pos = MicrotaurWalkActionCfg(
       target_gain_range=(1.0, 1.0) if self.play else s2r.action_gain_range,
@@ -437,3 +438,15 @@ class MicrotaurTeacherCurEnvCfg(MicrotaurTeacherEnvCfg):
 class MicrotaurTeacherCurPlayEnvCfg(MicrotaurTeacherCurEnvCfg):
   play: bool = True
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=16, env_spacing=0.5)
+
+
+@configclass
+class MicrotaurTeacherCurStudentEnvCfg(MicrotaurTeacherCurEnvCfg):
+  """Teacher-Cur + the 47-D student group (front / rear IMU, motor angles and velocities, five-bar
+  FK, last action, command) for distillation; the teacher group is unchanged."""
+  student_obs: bool = True
+
+
+@configclass
+class MicrotaurTeacherCurStudentPlayEnvCfg(MicrotaurTeacherCurPlayEnvCfg):
+  student_obs: bool = True

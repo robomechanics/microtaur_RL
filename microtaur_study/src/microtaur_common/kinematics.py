@@ -254,6 +254,33 @@ class MicrotaurFiveBarKinematics:
       valid=True,
     )
 
+  def forward_torch(self, q_a: torch.Tensor, q_e: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Batched foot position (foot_x, foot_z) in each leg plane from the motor angles.
+
+    q_a, q_e: [..., 4] absolute motor angles of legs 1..4 (canonical order). Same closed form
+    and assembly branch as forward_numpy (the two distal links have equal length, so the
+    closure is the midpoint of b-d plus the perpendicular offset; the lower solution is taken).
+    Unreachable configurations clamp the offset to 0 instead of returning NaN."""
+    sign = torch.as_tensor(LEG_SIGNS, dtype=q_a.dtype, device=q_a.device)
+    theta_ab = THETA_AB_ZERO_RAD - sign * q_a
+    theta_ed = THETA_ED_ZERO_RAD - sign * q_e
+    bx = self.a[0] + self.l1 * torch.cos(theta_ab)
+    bz = self.a[1] + self.l1 * torch.sin(theta_ab)
+    dx = self.e[0] + self.l1 * torch.cos(theta_ed)
+    dz = self.e[1] + self.l1 * torch.sin(theta_ed)
+    ux, uz = dx - bx, dz - bz
+    dist = torch.sqrt(ux * ux + uz * uz).clamp_min(1e-12)
+    ex, ez = ux / dist, uz / dist
+    h = torch.sqrt(torch.clamp(self.l2 * self.l2 - 0.25 * dist * dist, min=0.0))
+    mx, mz = bx + 0.5 * ux, bz + 0.5 * uz
+    # the two candidates are m +- h * (-ez, ex); keep the one with the lower z
+    c1z, c2z = mz + h * ex, mz - h * ex
+    lower_first = c1z <= c2z
+    cx = torch.where(lower_first, mx - h * ez, mx + h * ez)
+    cz = torch.where(lower_first, c1z, c2z)
+    theta_df = torch.atan2(cz - dz, cx - dx) + self.foot_delta
+    return dx + self.lf * torch.cos(theta_df), dz + self.lf * torch.sin(theta_df)
+
   def inverse_numpy(
     self,
     foot_x: float,

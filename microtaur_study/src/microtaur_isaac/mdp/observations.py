@@ -208,6 +208,30 @@ def foot_contact_forces(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> t
   return torch.sign(f) * torch.log1p(torch.abs(f))
 
 
+_KIN = None
+
+
+def foot_fk(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, biased: bool = True) -> torch.Tensor:
+  """Five-bar forward kinematics of each leg from its two (encoder-biased) motor angles: foot
+  (x, z) in the leg plane, metres, [N, 8] = (x1, z1, ..., x4, z4). The hardware computes the same
+  closed form (microtaur_common.kinematics.forward_torch) from its encoders."""
+  global _KIN
+  if _KIN is None:
+    from microtaur_common.kinematics import MicrotaurFiveBarKinematics
+    _KIN = MicrotaurFiveBarKinematics()
+  d = env.scene[asset_cfg.name].data
+  q = d.joint_pos[:, asset_cfg.joint_ids]
+  if biased:
+    q = q + encoder_bias(env, q.shape[1])
+  fx, fz = _KIN.forward_torch(q[:, 0::2], q[:, 1::2])
+  return torch.stack((fx, fz), dim=-1).reshape(q.shape[0], 8)
+
+
+def zeros_obs(env: ManagerBasedRLEnv, dim: int) -> torch.Tensor:
+  """Placeholder filled with zeros (reserved slots, e.g. the second IMU of the spine robot)."""
+  return torch.zeros(env.num_envs, dim, device=env.device)
+
+
 def height_scan(
   env: ManagerBasedRLEnv,
   sensor_name: str = HEIGHT_SCANNER,
@@ -321,33 +345,78 @@ def teacher_obs_cfg(height_scan: bool = True, stage: Sim2RealStage | None = None
 
 
 @configclass
+class StudentObsCfg(ObsGroup):
+  """Deployable student observations, 47 per frame. Layout shared with the future active-spine
+  robot (two body segments, one IMU each; the spine robot appends spine pos/vel and a 9th action):
+  front IMU (gravity 3, ang vel 3), rear IMU (gravity 3, ang vel 3: zeros on the rigid robot),
+  8 encoder-biased motor angles, 8 motor velocities, five-bar FK foot (x, z) x 4, last action 8,
+  command 3. No base linear velocity, no terrain height. Field order = observation order."""
+
+  projected_gravity: ObsTerm = ObsTerm(func=projected_gravity)
+  base_ang_vel: ObsTerm = ObsTerm(func=base_ang_vel)
+  imu2_projected_gravity: ObsTerm = ObsTerm(func=zeros_obs, params={"dim": 3})
+  imu2_base_ang_vel: ObsTerm = ObsTerm(func=zeros_obs, params={"dim": 3})
+  joint_pos: ObsTerm = _obs_legs(joint_pos, biased=True)
+  joint_vel: ObsTerm = _obs_legs(joint_vel)
+  foot_fk: ObsTerm = _obs_legs(foot_fk, biased=True)
+  actions: ObsTerm = ObsTerm(func=il_mdp.last_action)
+  command: ObsTerm = ObsTerm(func=il_mdp.generated_commands, params={"command_name": COMMAND_NAME})
+  history_length: int = 0  # int default so Hydra can set env.observations.student.history_length
+
+  def __post_init__(self):
+    self.enable_corruption = True
+    self.concatenate_terms = True
+
+
+STUDENT_TERMS = ("projected_gravity", "base_ang_vel", "imu2_projected_gravity", "imu2_base_ang_vel",
+                 "joint_pos", "joint_vel", "foot_fk", "actions", "command")
+STUDENT_OBS_DIM = 47
+FK_NOISE_LEVER_M = 0.08  # foot distance from the motor pivots: joint-angle noise x lever -> foot noise
+
+
+def student_obs_cfg(stage: Sim2RealStage | None) -> StudentObsCfg:
+  group = StudentObsCfg()
+  if stage is not None:
+    _apply_noise(group, stage)
+    group.foot_fk.noise = UniformNoiseCfg(n_min=-stage.joint_pos_noise * FK_NOISE_LEVER_M,
+                                          n_max=stage.joint_pos_noise * FK_NOISE_LEVER_M)
+  return group
+
+
+@configclass
 class MicrotaurObservationsCfg:
   policy: ObsGroup = ActorObsCfg()
   critic: ObsGroup = CriticObsCfg()
   teacher: ObsGroup | None = None
+  student: ObsGroup | None = None
 
 
 OBS_CLIP = 100.0  # far above any normal value (joint speed <= 32 rad/s, log forces < 10, air time <= 20 s)
 
 
 def make_observations_cfg(
-  stage: Sim2RealStage, rough: bool = False, teacher: bool = False, play: bool = False
+  stage: Sim2RealStage, rough: bool = False, teacher: bool = False, play: bool = False, student: bool = False
 ) -> MicrotaurObservationsCfg:
   """Observation groups policy (actor), critic and optionally teacher.
   play disables actor noise, as mjlab's play config."""
   cfg = MicrotaurObservationsCfg(policy=actor_obs_cfg(stage), critic=critic_obs_cfg(rough))
   if teacher:
     cfg.teacher = teacher_obs_cfg(height_scan=True, stage=None if play else stage)
+  if student:
+    cfg.student = student_obs_cfg(stage)
   if play:
     cfg.policy.enable_corruption = False
-    if cfg.teacher is not None:
-      cfg.teacher.enable_corruption = False
+    for g in (cfg.teacher, cfg.student):
+      if g is not None:
+        g.enable_corruption = False
   # Clip every term: a finite PhysX glitch (e.g. a leg joint of the closed chain at 1e4 rad/s
   # while the root is calm) must not reach the networks (p3 ablation: critic loss 0.07 -> inf).
-  for group in (cfg.policy, cfg.critic, cfg.teacher):
+  for group in (cfg.policy, cfg.critic, cfg.teacher, cfg.student):
     if group is not None:
       for term in group_terms(group).values():
         term.clip = (-OBS_CLIP, OBS_CLIP)
+  if cfg.student is not None and tuple(group_terms(cfg.student)) != STUDENT_TERMS:
+    raise RuntimeError(f"Student observation layout changed: {tuple(group_terms(cfg.student))}")
   validate_observation_contract(cfg, rough=rough)
   return cfg
 

@@ -131,3 +131,18 @@ class MicrotaurStudentGRURunnerCfg(MicrotaurStudentMLPRunnerCfg):
     rnn_num_layers=1,
     teacher_recurrent=False,
   )
+
+
+@configclass
+class MicrotaurStudentV2RunnerCfg(MicrotaurStudentMLPRunnerCfg):
+  """MLP student on the 47-D "student" group (two IMU slots, FK); give it history with
+  env.observations.student.history_length=<n>. 60 steps per rollout (a multiple of any BPTT
+  window; critic audit 2026-09-27)."""
+  num_steps_per_env = 60
+  obs_groups = {"policy": ["student"], "teacher": ["teacher"]}
+
+
+@configclass
+class MicrotaurStudentV2SmallRunnerCfg(MicrotaurStudentV2RunnerCfg):
+  """Smaller student (256-128) for on-board inference."""
+  policy = MicrotaurStudentV2RunnerCfg().policy.replace(student_hidden_dims=[256, 128])
