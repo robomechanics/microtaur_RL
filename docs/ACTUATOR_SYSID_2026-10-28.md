@@ -2,6 +2,18 @@
 
 2026-10-28 · branch `spine-study-isaac` · robot: `rigid`, XL330-M077 legs
 
+> ⚠ **Read this first: every number here was measured with the servo's own
+> `Position D Gain` set to 200**, copied from the App Lab firmware that was
+> actually running on the robot (`uno_q_apps/microtaur_model13395_v1_8_4_motion_timeline`,
+> `POSITION_D_GAIN_LEG = 200`).
+>
+> The upstream sim2real characterization used **D = 0**
+> (`sim2real/microtaur_hw_characterization/arduino/.../microtaur_characterization.ino`,
+> `POSITION_D_GAIN_LEG = 0`) and fitted `KD = 0.0` to it, reporting sim settling
+> ~145 ms against hardware ~144 ms. Both sets of numbers are right; they
+> describe two different controllers. **`KD` in sim and `D` in firmware are the
+> same physical quantity and have to be set as a pair** -- see §4.
+
 Measured on hardware, suspended, one joint driven at a time. Every number below
 comes from a capture that is reproducible with the sketches named in §5, so it
 can be rechecked when a motor is replaced or the supply changes. The three
@@ -110,7 +122,7 @@ right to within 4% and should not move.** The damping is the problem.
 
 | constant | current | set to | reason |
 |---|---|---|---|
-| `KD` | **0.0** | **0.0092** | `zeta = KD/(2 sqrt(KP*J))`, so `KD = 0` is zero controller damping; measured `zeta` is 0.292. See below. |
+| `KD` | **0.0** | **0.0092 only if the firmware runs servo `D` = 200** | `KD` and the firmware `D` are one quantity; `0.0` is correct for the `D` = 0 robot upstream characterized. Do not change it alone -- see below. |
 | `EFFORT_LIMIT_NM` | `0.60 * stall` | **`0.40 * stall`** | 0.60 of stall is 871 mA, 59% of stall current, high for continuous duty. 0.40 is 581 mA (40%), still 2.8x the worst measured static demand of 206 mA. |
 | `FRICTIONLOSS_NM` | 0.010 | **0.028** | measured Coulomb equivalent. Optionally randomise per joint over [0.018, 0.050] to cover the 2x spread in §3. On Isaac also set `dynamic_friction` to the same value, as `microtaur_isaac/robot.py` already does. |
 | `KP` | 1.0 | keep | measured `omega_n` within 4% |
@@ -118,33 +130,51 @@ right to within 4% and should not move.** The damping is the problem.
 | `VELOCITY_LIMIT_RAD_S` | `0.80 * no_load` | keep | physical, not a safety cap -- see below |
 | `XL330_STALL_TORQUE_NM` | 0.215 | keep | datasheet, consistent with `kt * I_stall` |
 
-### `KD = 0.0  # never validated in isolation`
+### `KD`: set it with the firmware's `D`, not on its own
 
-That comment is what this measurement answers. `KD` is the only linear damping
-in the model, so `KD = 0` makes the simulated joint ring with nothing to stop it
-but Coulomb friction. The measured joint is underdamped but not undamped:
-`zeta = 0.292`, a 1.79x peak at 10 Hz. Solving `zeta = KD/(2 sqrt(KP*J))` for the
-measured value gives **`KD = 2 * 0.292 * sqrt(1.0 * 2.284e-4) = 0.0092`**.
+That comment -- "never validated in isolation" -- is answered, but the answer is
+conditional, and the condition is the firmware gain.
 
-Note the direction, because the older `Microtaur_RL-main/src/microtaur_velocity/env_cfgs.py`
-carries `XL330_POSITION_KD = 0.045`, which is the opposite error: it puts
-`zeta` at 1.489, above `1/sqrt(2)`, so that joint has **no resonant peak at
-all** -- its gain never exceeds 1 at any frequency. Whichever file a run
-imports from decides whether the plant can resonate, and neither value is
-right. 0.0092 sits between them and is the measured one.
+| firmware servo `D` | measured overshoot | measured settling | implied `zeta` | matching sim `KD` |
+|---|---|---|---|---|
+| **0** (upstream characterization) | 63% | 144 ms | **0.146** | **0.0** |
+| **200** (the App Lab firmware actually deployed) | 43.7% | 93 ms | **0.292** | **0.0092** |
 
-Why it matters beyond fidelity: the real joint amplifies 1.79x at 10 Hz and
-draws 1328 mA there, against 86 mA for the same amplitude at 4.4 Hz -- fifteen
-times the current. Under `KD = 0` the simulated joint amplifies more than that,
-under `KD = 0.045` it does not amplify at all, and in neither case does the
-8-13 Hz band cost what it costs on hardware. Setting `KD` from the measurement
-is what makes a policy's spectral choices carry their real price.
+`zeta = KD/(2 sqrt(KP*J))` with `J = 2.284e-4` and `KP = 1.0` gives
+`KD = 2 * 0.292 * 0.015113 = 0.0092` for the D=200 robot. For the D=0 robot the
+existing `KD = 0.0` is right, and upstream's fit confirms it independently:
+simulator Test 18 swept `KD = 0, 0.01, 0.02, 0.03, 0.045` and settling matched
+hardware to 1 ms at `KD = 0`.
 
-⚠ **Check the closed chain after changing it.** `microtaur_isaac/robot.py`
-records that 16 position iterations at a 2.5 ms step hold loop closure within
-MuJoCo's error on trot **at KD 0.045**, and that at **KD 0** the p99 still
-passes but the maximum rises to about 5 mm. 0.0092 is nearer 0 than 0.045, so
-re-run that spike rather than assuming the solver settings carry over.
+**So do not change `KD` alone.** Changing it without changing the firmware `D`
+breaks the pairing in exactly the way sim2real work exists to prevent, and the
+same is true in reverse: the robot has been running `D = 200` under the App Lab
+firmware while the simulator was fitted at `D = 0`, which is already a mismatch
+in the deployed direction.
+
+Two things are worth deciding rather than inheriting:
+
+**The D=200 robot is measurably better behaved** -- 43.7% overshoot against 63%,
+93 ms settling against 144 ms, and twice the damping ratio. Upstream's KD sweep
+never tried raising the firmware `D` and refitting; it took `D = 0` as given.
+If the pair `(D = 200, KD = 0.0092)` is adopted, the resonant peak drops from
+the `KD = 0` case and the 8-13 Hz band costs something without the plant being
+over-damped.
+
+**Whichever pair is chosen, the resonance is real and should be checked against
+the measurement.** At D=200 the joint amplifies **1.79x at 10 Hz** and draws
+1328 mA there, against 86 mA for the same amplitude at 4.4 Hz -- fifteen times
+the current. `KD = 0.0` with the D=0 robot amplifies more than that, not less,
+so neither configuration makes high-frequency command content free. What makes
+it free is an over-damped `KD`, which is what the older
+`Microtaur_RL-main/src/microtaur_velocity/env_cfgs.py` still carries at
+`XL330_POSITION_KD = 0.045`: that puts `zeta` at 1.489, above `1/sqrt(2)`, and
+removes the peak entirely. That value matches neither robot.
+
+⚠ **Check the closed chain if `KD` moves.** `microtaur_isaac/robot.py` records
+that 16 position iterations at a 2.5 ms step hold loop closure within MuJoCo's
+error on trot at KD 0.045, and that at KD 0 the p99 still passes but the maximum
+rises to about 5 mm. Re-run that spike rather than assuming it carries over.
 
 ⚠ **`0.0092` solves the linear term alone.** Raising `FRICTIONLOSS_NM` to 0.028
 adds damping on top of it, so verify instead of trusting the arithmetic: replay
@@ -156,9 +186,9 @@ f (Hz)    1.0    2.0    3.0   4.431   6.0    8.0   10.0
 lag(deg)  5.2    9.2   13.9   21.1   29.3   42.5    -
 ```
 
-If the simulated peak overshoots 1.79, `KD` is too low; if it falls short, too
-high. `tools/isaac_servo_curves.py` already does the command-versus-response
-half of this in sim and is the natural place to add the sweep.
+measured at D=200. `tools/isaac_servo_curves.py` already does the
+command-versus-response half of this in sim and is the natural place to add the
+sweep.
 
 ### `velocity_limit` is not the knob for current stress
 
