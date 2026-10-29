@@ -28,8 +28,9 @@ from microtaur_common.reset import NOMINAL_FULL_Q
 from microtaur_common.robot_constants import XML_PATH, motor_joint_ranges
 
 
-def compile_model() -> mujoco.MjModel:
-  spec = mujoco.MjSpec.from_file(str(XML_PATH))
+def compile_model(xml_path=None) -> mujoco.MjModel:
+  """The MJCF (default: the rigid robot) with the leg motor-range patch; other joints keep the XML's ranges."""
+  spec = mujoco.MjSpec.from_file(str(xml_path or XML_PATH))
   for name, (lo, hi) in motor_joint_ranges().items():
     j = spec.joint(name)
     j.limited = mujoco.mjtLimited.mjLIMITED_TRUE
@@ -37,12 +38,16 @@ def compile_model() -> mujoco.MjModel:
   return spec.compile()
 
 
-def build_usd(out_path: str, visuals: bool = False) -> dict:
+def build_usd(out_path: str, visuals: bool = False, xml_path=None) -> dict:
+  """xml_path: an MJCF of the same robot family (default: the rigid robot). Joints other than the 16 leg
+  joints (e.g. the yaw robot's spine) are authored at q = 0."""
   from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
 
-  m = compile_model()
+  m = compile_model(xml_path)
   d = mujoco.MjData(m)
-  d.qpos[3] = 1.0  # root at origin, identity orientation
+  free = [j for j in range(m.njnt) if int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_FREE)]
+  assert len(free) == 1, "expected exactly one free (root) joint"
+  d.qpos[int(m.jnt_qposadr[free[0]]) + 3] = 1.0  # root at origin, identity orientation
   full = NOMINAL_FULL_Q.reshape(16)
   for name, q in zip(FULL_JOINT_NAMES, full):
     d.qpos[m.joint(name).qposadr[0]] = q
@@ -97,6 +102,18 @@ def build_usd(out_path: str, visuals: bool = False) -> dict:
     elif gtype == int(mujoco.mjtGeom.mjGEOM_BOX):
       geom = UsdGeom.Cube.Define(stage, path)
       geom.CreateSizeAttr(2.0)
+    elif gtype == int(mujoco.mjtGeom.mjGEOM_MESH):
+      # MuJoCo collides a mesh as its convex hull: give PhysX the same mesh with a convex-hull approximation
+      # (the active-yaw trunk halves). mesh_vert is in the geom frame, like the visual meshes below.
+      mid = int(m.geom_dataid[g])
+      va, vn = int(m.mesh_vertadr[mid]), int(m.mesh_vertnum[mid])
+      fa, fn = int(m.mesh_faceadr[mid]), int(m.mesh_facenum[mid])
+      geom = UsdGeom.Mesh.Define(stage, path)
+      geom.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(m.mesh_vert[va:va + vn], dtype=np.float32)))
+      geom.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(fn, 3, dtype=np.int32)))
+      geom.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(np.ascontiguousarray(m.mesh_face[fa:fa + fn].reshape(-1), dtype=np.int32)))
+      geom.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+      UsdPhysics.MeshCollisionAPI.Apply(geom.GetPrim()).CreateApproximationAttr(UsdPhysics.Tokens.convexHull)
     else:
       raise ValueError(f"unsupported collision geom type {gtype} ({m.geom(g).name})")
     geom.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Vec3d(*map(float, m.geom_pos[g])))

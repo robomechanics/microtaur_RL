@@ -80,3 +80,43 @@ MICROTAUR_RIGID_CFG = ArticulationCfg(
     ),
   },
 )
+
+
+# -----------------------------------------------------------------------------
+# Active-yaw variant (assets/active_yaw_microtaur/robot_2imu.xml): the same legs and leg motors plus the
+# spine XL330-M288. USD built by scripts/isaac_make_usd_yaw.py, which also checks the masses, inertias,
+# closure, the spine inertia / natural frequency and standing against MuJoCo.
+# -----------------------------------------------------------------------------
+from microtaur_common.robot_constants import (  # noqa: E402
+  SPINE_ARMATURE, SPINE_EFFORT_LIMIT_NM, SPINE_FRICTIONLOSS_NM, SPINE_JOINT_NAME, SPINE_KD, SPINE_KP,
+  SPINE_VELOCITY_LIMIT_RAD_S, XL330_M288_STALL_TORQUE_NM, YAW_ASSET_DIR,
+)
+
+YAW_USD_PATH = YAW_ASSET_DIR / "microtaur_yaw.usda"
+YAW_VISUAL_USD_PATH = YAW_ASSET_DIR / "microtaur_yaw_visual.usd"
+# Root (front-half mount) height with the lowest foot sphere on the ground at the stand pose and spine 0
+# (MuJoCo, robot_2imu.xml). The rear feet are 5.2 mm higher than the front ones at equal leg angles.
+YAW_NOMINAL_ROOT_HEIGHT_M = 0.076492
+
+MICROTAUR_YAW_CFG = MICROTAUR_RIGID_CFG.replace(
+  spawn=MICROTAUR_RIGID_CFG.spawn.replace(usd_path=str(YAW_USD_PATH)),
+  init_state=MICROTAUR_RIGID_CFG.init_state.replace(
+    pos=(0.0, 0.0, YAW_NOMINAL_ROOT_HEIGHT_M),
+    joint_pos={**MICROTAUR_RIGID_CFG.init_state.joint_pos, SPINE_JOINT_NAME: 0.0},
+  ),
+  actuators={
+    **MICROTAUR_RIGID_CFG.actuators,
+    "spine": DCMotorCfg(
+      joint_names_expr=[SPINE_JOINT_NAME],
+      stiffness=SPINE_KP,
+      damping=SPINE_KD,
+      effort_limit=SPINE_EFFORT_LIMIT_NM,
+      saturation_effort=XL330_M288_STALL_TORQUE_NM,
+      velocity_limit=SPINE_VELOCITY_LIMIT_RAD_S,
+      armature=SPINE_ARMATURE,
+      friction=SPINE_FRICTIONLOSS_NM,
+      dynamic_friction=SPINE_FRICTIONLOSS_NM,
+      viscous_friction=0.0,
+    ),
+  },
+)

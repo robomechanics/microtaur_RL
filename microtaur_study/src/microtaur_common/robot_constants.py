@@ -158,3 +158,32 @@ SPINE_INERTIA_FROM_MEASUREMENT = 0.0163
 PASSIVE_ARMATURE = 1e-6
 PASSIVE_FRICTIONLOSS_NM = 0.001
 PASSIVE_DAMPING = 1e-4
+
+# -----------------------------------------------------------------------------
+# Active-yaw variant: assets/active_yaw_microtaur/robot_2imu.xml (the user's 2026-10-29 model with two IMU
+# sites; chassis masses NOT yet re-measured -- see the XML header). Legs are identical to the rigid model.
+# -----------------------------------------------------------------------------
+YAW_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "active_yaw_microtaur"
+YAW_XML_PATH = YAW_ASSET_DIR / "robot_2imu.xml"
+YAW_ROOT_BODY = "s_microtaur_bottom_half_motor_mount"  # front half (legs 3, 4), carries IMU 1
+YAW_REAR_BODY = "s_microtaur_top_half_motor_mount"  # rear half (legs 1, 2), carries IMU 2
+SPINE_JOINT_NAME = "spine_joint_act"
+# IMU sites (from the XML): IMU 1 is aligned with the root frame; IMU 2's site is rotated 180 deg about y
+# in the rear body (whose own frame is flipped), so both read in the robot frame (x fwd, z up) at stand.
+YAW_IMU1_QUAT_IN_ROOT = (1.0, 0.0, 0.0, 0.0)  # wxyz
+YAW_IMU2_QUAT_IN_REAR = (0.0, 0.0, 1.0, 0.0)  # wxyz
+
+# Spine actuator, XL330-M288 (288.4:1), from the 2026-10-28 measurement above (SPINE_*_MEASURED):
+# omega_n 3.4 Hz, zeta 0.341 at the robot's own P gain 3000. The model's spine inertia (link 2.35e-3 +
+# armature 2e-4) is ~6-7x below what the measured current needs, so the armature makes up the measured
+# total; KD follows from zeta. isaac_make_usd_yaw.py checks the resulting inertia and natural frequency.
+XL330_M288_STALL_TORQUE_NM = 0.52  # datasheet
+SPINE_KP = SPINE_KP_FROM_MEASUREMENT  # 7.44 N m / rad
+SPINE_LINK_INERTIA = 2.3838e-3  # mj_fullM about the spine axis at the stand pose, without armature (checked by the build)
+SPINE_ARMATURE = SPINE_INERTIA_FROM_MEASUREMENT - SPINE_LINK_INERTIA  # 0.01395 -> total 0.0163 kg m^2
+SPINE_KD = 2.0 * SPINE_ZETA_MEASURED * math.sqrt(SPINE_KP * SPINE_INERTIA_FROM_MEASUREMENT)  # 0.238
+# Measured, not a protection choice: the current clamps near 1300 mA (2026-10-28 amplitude sweep, torque
+# saturation at 320 ticks); 1233 mA <-> 0.474 N m implies kt 0.384 N m / A, so the ceiling is ~0.50 N m.
+SPINE_EFFORT_LIMIT_NM = 0.50
+SPINE_VELOCITY_LIMIT_RAD_S = 0.80 * 103.0 * 2.0 * math.pi / 60.0  # datasheet no-load 103 rpm (TO CONFIRM)
+SPINE_FRICTIONLOSS_NM = 0.010  # the XML's value; not measured
