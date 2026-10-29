@@ -46,12 +46,45 @@ XL330_STALL_TORQUE_NM = 0.215
 XL330_STALL_CURRENT_A = 1.47
 XL330_NO_LOAD_SPEED_RAD_S = 383.0 * 2.0 * math.pi / 60.0
 
-KP = 1.0
-KD = 0.0  # 2026-09-20 hardware calibration; never validated in isolation.
-ARMATURE = 2e-4
-EFFORT_LIMIT_NM = 0.60 * XL330_STALL_TORQUE_NM  # training-time torque cap
+KP = 1.0  # measured omega_n is within 4% of sqrt(KP/J); do not move it
+
+# 2026-10-28 sweep on the rigid robot, suspended, one joint at a time
+# (docs/ACTUATOR_SYSID_2026-10-28.md): omega_n 11.0 Hz, zeta 0.292, a 1.79x
+# gain peak at 10 Hz, and a 9.6-11.6 ms transport delay flat across 1-6 Hz.
+# zeta = KD/(2 sqrt(KP*J)) with J = 2.284e-4 from mj_fullM gives KD = 0.0092.
+#
+# !! KD AND THE FIRMWARE'S SERVO D GAIN ARE ONE QUANTITY. !!
+# 0.0092 is the value for a robot whose firmware runs Position D Gain = 200.
+# The upstream characterization used D = 0, measured 63% overshoot and 144 ms
+# settling (zeta 0.146) and fitted KD = 0.0 to it, matching to 1 ms. Both are
+# right; they are different controllers. Changing one without the other breaks
+# the pairing that sim2real exists to maintain, and the deployment firmware
+# (sim2real/async_deployment_v1/.../sketch.ino) still writes D = 0.
+# D = 200 is the better-behaved robot -- half the resonant peak, 1.79x against
+# 3.46x -- which is why this file carries its value.
+KD = 0.0092
+ARMATURE = 2e-4  # equals BAM's identified 2.0005e-4 for this motor
+
+# 0.40 rather than 0.60 of stall. effort_limit is the one protection setting
+# here (velocity_limit is the zero-torque speed, so lowering that weakens the
+# motor at every speed instead of capping anything). 0.60 of stall is 871 mA,
+# 59% of stall current and high for continuous duty; 0.40 is 581 mA, 40%, and
+# still 2.8x the worst static demand measured on hardware (206 mA holding the
+# robot up on one leg's worst joint).
+EFFORT_LIMIT_NM = 0.40 * XL330_STALL_TORQUE_NM
+
+# Unchanged: 0.80 * no-load is 306 rpm, between the measured floor of 248 rpm
+# (a full-travel step, which had not saturated) and the voltage-scaled
+# datasheet figure near 345 rpm.
 VELOCITY_LIMIT_RAD_S = 0.80 * XL330_NO_LOAD_SPEED_RAD_S
-FRICTIONLOSS_NM = 0.010
+
+# Measured Coulomb equivalent, from the intercept of the loaded holding fit
+# err ~= 9.9 + 1.41*tau(mNm): 9.9 ticks of dead zone is 28 mNm, 13% of stall.
+# The spread between joints is real and about 2x -- id6 draws twice id1's
+# current and lags 1.3-2.4x more below 8 Hz while their gain curves overlap --
+# so randomising this per joint over roughly [0.018, 0.050] models device
+# variation rather than noise.
+FRICTIONLOSS_NM = 0.028
 
 # Electrical model for the energy reward, derived from the stall point:
 #   R_eff = V / I_stall, k_t = tau_stall / I_stall, copper loss = (R / k_t^2) tau^2.
@@ -69,6 +102,52 @@ def motor_joint_ranges() -> dict[str, tuple[float, float]]:
     name: (stand - JOINT_HALF_RANGE_RAD, stand + JOINT_HALF_RANGE_RAD)
     for name, stand in STAND_JOINT_POS.items()
   }
+
+# -----------------------------------------------------------------------------
+# Deployment loop timing. Measured upstream (aryan-chandra-cmu/Microtaur_RL
+# main, sim2real/README.md and env_cfgs.py:43-50), not here; kept because
+# nothing in this repo measures it and the policy period depends on it.
+# -----------------------------------------------------------------------------
+# 35 ms is a ceiling, not a preference: 25-33 Hz was reliable, 35-37 Hz began
+# missing deadlines and 40 Hz was not deterministic. Enforce it with an integer
+# decimation and raise if the product does not land on it exactly.
+HARDWARE_CONTROL_PERIOD_S = 0.035
+
+# Motor sample to action mailbox, i.e. the sensing and compute path. This is a
+# DIFFERENT segment from the 9.6-11.6 ms actuation delay measured here (goal
+# written to joint moving); the two do not overlap and should not be summed
+# into one "delay" without saying which is which.
+HARDWARE_SENSOR_TO_ACTION_MEAN_S = 0.0540
+HARDWARE_SENSOR_TO_ACTION_MAX_S = 0.0624
+
+# The action delay is one policy step because the lag was measured at 100% one
+# frame, not fitted. Any extra-step probability is for scheduler tails only.
+HARDWARE_ACTION_DELAY_STEPS = 1
+
+# -----------------------------------------------------------------------------
+# Spine actuator, for when a spine variant is added. Measured 2026-10-28 on the
+# yaw robot, spine only (XL330-M288, model 1190, 288.4:1, driven at the robot's
+# own P gain of 3000 against the legs' 1500): omega_n 3.4 Hz, zeta 0.341, a
+# 1.56x peak at 3.0 Hz. It is a different KIND of system from a leg -- its lag
+# in milliseconds is not flat with frequency (19 -> 72 -> 48 ms), so it is its
+# own second-order response rather than a transport delay, and at 4.431 Hz it
+# sits about 109 degrees behind its command where a leg sits 21-30 behind.
+#
+# !! The simulated spine gets omega_n right by cancellation. !! The yaw model's
+# spine joint has J = 2.546e-3 and inherits the legs' KP = 1.0, giving 3.15 Hz
+# against 3.4 Hz measured -- but omega_n fixes only k/J. The peak current
+# separates them: at 2 Hz and a 120-tick half amplitude the hardware drew
+# 1233 mA, which those sim values predict as 180 mA and (k 7.44, J 0.0163)
+# predicts as 1338 mA. Both stiffness and inertia are about 6-7x low, so the
+# ratio is right and the absolute torque is wrong by the same factor. Fixing
+# one alone moves omega_n off the measurement.
+SPINE_OMEGA_N_HZ_MEASURED = 3.4
+SPINE_ZETA_MEASURED = 0.341
+SPINE_KP_FROM_MEASUREMENT = 7.44       # against the legs' 1.0
+SPINE_INERTIA_FROM_MEASUREMENT = 0.0163
+# Usable linear amplitude is narrow: roughly 90-180 ticks at 2 Hz, with 59 ms
+# of stiction lag below it (three times the large-amplitude value, where the
+# legs showed 1.8x) and torque saturation above it.
 
 # Passive (unactuated) five-bar joints. Already set per joint in the XML; listed
 # here for simulators that build joints from these numbers (IsaacLab).
