@@ -65,13 +65,17 @@ KP = 1.0  # measured omega_n is within 4% of sqrt(KP/J); do not move it
 KD = 0.0092
 ARMATURE = 2e-4  # equals BAM's identified 2.0005e-4 for this motor
 
-# 0.40 rather than 0.60 of stall. effort_limit is the one protection setting
+# 0.60 of stall = 0.129 N m (871 mA). effort_limit is the one protection setting
 # here (velocity_limit is the zero-torque speed, so lowering that weakens the
-# motor at every speed instead of capping anything). 0.60 of stall is 871 mA,
-# 59% of stall current and high for continuous duty; 0.40 is 581 mA, 40%, and
-# still 2.8x the worst static demand measured on hardware (206 mA holding the
-# robot up on one leg's worst joint).
-EFFORT_LIMIT_NM = 0.40 * XL330_STALL_TORQUE_NM
+# motor at every speed instead of capping anything).
+# 0.40 (581 mA) was tried on 2026-10-28 (t3) and is too weak: friction 0.028 plus
+# the worst static holding demand (~0.030) already take ~68% of 0.086 N m, the
+# trained teacher sat at the cap 54-66% of motor-steps, walked 0.14 m/s at any
+# command and could not climb the 37 mm step. It is a protection choice, not a
+# measured limit: the deployed firmware sets no current limit and hardware drew
+# 1404 mA (~0.208 N m, ~97% of stall) transiently while braking. If motor current
+# has to be limited, set the servo's Current Limit register and copy that value here.
+EFFORT_LIMIT_NM = 0.60 * XL330_STALL_TORQUE_NM
 
 # Unchanged: 0.80 * no-load is 306 rpm, between the measured floor of 248 rpm
 # (a full-travel step, which had not saturated) and the voltage-scaled
