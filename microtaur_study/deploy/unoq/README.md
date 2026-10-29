@@ -31,10 +31,9 @@ import microtaur_policy as mp
 ctrl = mp.Controller("policy_weights.npz")       # or Controller(..., onnx_path="policy.onnx")
 ctrl.reset()                                     # at start, and after any stop / pick-up
 while running:
-    q  = mp.rad_from_ticks(present_position_ticks)   # 8 values, canonical joint order (below)
-    qd = present_velocity_rad_s                      # 8 values, rad/s
+    q, qd = mp.state_from_ticks(present_position_ticks_id, present_velocity_raw_id)  # ID order in, canonical out
     target = ctrl.step(gravity_b, gyro_b, q, qd, command=(vx, 0.0, wz))
-    write_goal_position(mp.ticks_from_rad(target))   # send immediately (see "Latency")
+    write_goal_position(mp.goal_ticks_from_rad(target))   # ID order 1..8; send immediately (see "Latency")
 ```
 
 ## Interface
@@ -47,20 +46,22 @@ while running:
 ### Joint order and hardware mapping
 The canonical order is used everywhere (observations, actions, targets):
 
-| index | joint | leg | DXL ID | stand (rad) | stand tick | tick sign |
+| index | joint | leg | DXL ID | stand (rad) | stand tick (action 0) | tick sign |
 |---|---|---|---|---|---|---|
-| 0 | leg1_a | rear right | 5 | +0.45 | 3590 | −1 |
-| 1 | leg1_e | rear right | 6 | −0.45 | 625 | +1 |
-| 2 | leg2_a | rear left | 3 | −0.45 | 3538 | +1 |
-| 3 | leg2_e | rear left | 4 | +0.45 | 532 | −1 |
-| 4 | leg3_a | front left | 1 | −0.45 | 3473 | +1 |
-| 5 | leg3_e | front left | 2 | +0.45 | 491 | −1 |
-| 6 | leg4_a | front right | 7 | +0.45 | 3685 | −1 |
-| 7 | leg4_e | front right | 8 | −0.45 | 606 | +1 |
+| 0 | leg1_a | rear right | 5 | +0.45 | 3298.9 | −1 |
+| 1 | leg1_e | rear right | 6 | −0.45 | 797.1 | −1 |
+| 2 | leg2_a | rear left | 4 | −0.45 | 796.1 | −1 |
+| 3 | leg2_e | rear left | 3 | +0.45 | 3295.9 | −1 |
+| 4 | leg3_a | front left | 2 | −0.45 | 798.1 | −1 |
+| 5 | leg3_e | front left | 1 | +0.45 | 3289.9 | −1 |
+| 6 | leg4_a | front right | 7 | +0.45 | 3294.9 | −1 |
+| 7 | leg4_e | front right | 8 | −0.45 | 803.1 | −1 |
 
-`rad = stand_rad + sign × (tick − stand_tick) × 2π/4096`.
+`rad = stand_rad − (tick − stand_tick) × 2π/4096`. Velocity: `rad/s = −raw × 0.229 rpm`.
 
-These constants are copied from upstream `sim2real/microtaur_hw_characterization/config/hardware_config.py`, **which marks them `CALIBRATION_VERIFIED = False`**. The IDs, signs and stand ticks must be confirmed on the robot before the policy runs (upstream Test 01, `01_mapping_and_sign.py`). If any value is wrong, the only file to change is `microtaur_policy.py` (`JOINT_TO_DXL_ID`, `HW_SIGN`, `STAND_TICK`).
+This is the calibration of the deployed robot, copied exactly from upstream `sim2real/async_deployment_v1/microtaur_rl/python/control_math.py` and `calibration.py` (Aryan's "experimentally verified" mapping, used for the sim2real gait tests). The stand ticks come from the measured **Z79 pose**: feet 79.0 mm below the motor axes, |q| = 0.4606 rad. They are shifted by about 7 ticks to the policy stand |q| = 0.45 rad. Rounded, action 0 is **3290, 798, 3296, 796, 3299, 797, 3295, 803** in ID order 1..8; `test_golden.py` checks this.
+
+⚠ An earlier version of this bundle used the constants in `microtaur_hw_characterization/config/hardware_config.py`. That file holds an old, unverified, nearly straight-legged pose, with a and e swapped on legs 2 and 3 and two signs flipped. Do **not** use it: action 0 would be 15–34° away from the stand. If the robot is re-calibrated, update `Z79_TICKS_ID` in `microtaur_policy.py`.
 
 **Sanity check after calibration:** hold the stand ticks. Every leg should look identical, with the foot straight under the hip, and `mp.foot_fk(q)` should read about (x, z) = (−5.1, −73.5) mm for all four legs.
 

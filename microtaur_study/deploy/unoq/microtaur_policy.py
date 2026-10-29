@@ -10,8 +10,8 @@ Conventions (identical to the simulator):
   * Joint order (canonical): leg1_a, leg1_e, leg2_a, leg2_e, leg3_a, leg3_e, leg4_a, leg4_e.
     leg1 = rear right, leg2 = rear left, leg3 = front left, leg4 = front right.
   * Joint angles: simulator radians (same zero and sign as the MJCF joints); stand pose STAND.
-    Use rad_from_ticks() / ticks_from_rad() for the XL330 tick conversion (see README: the
-    upstream calibration constants are flagged unverified).
+    Use state_from_ticks() / goal_ticks_from_rad() for the XL330 conversion: the deployed robot's
+    calibration (upstream sim2real/async_deployment_v1), Dynamixel arrays in ID order 1..8.
   * Body frame: x forward, y left, z up (the battery / root body).
   * Policy period DT = 0.035 s (28.6 Hz).
 """
@@ -257,24 +257,48 @@ class ActionPipeline:
 
 
 # -----------------------------------------------------------------------------
-# XL330 ticks <-> simulator radians (constants from upstream
-# sim2real/microtaur_hw_characterization/config/hardware_config.py, CALIBRATION_VERIFIED = False)
+# XL330 ticks <-> simulator radians: the calibration of the deployed robot, copied exactly from upstream
+# sim2real/async_deployment_v1/microtaur_rl/python/{control_math.py, calibration.py} (aryan-chandra-cmu/
+# Microtaur_RL main 7961ade, "experimentally verified"). Arrays named *_ID are in Dynamixel ID order 1..8.
+# (An earlier version of this file used hardware_config.py, which is an old unverified pose: wrong.)
 # -----------------------------------------------------------------------------
 
 RAD_PER_TICK = 2.0 * math.pi / 4096
-JOINT_TO_DXL_ID = (5, 6, 3, 4, 1, 2, 7, 8)  # canonical order
-HW_SIGN = np.array([-1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0])
-STAND_TICK = np.array([3590, 625, 3538, 532, 3473, 491, 3685, 606])
+VEL_RAW_TO_RAD_S = 0.229 * 2.0 * math.pi / 60.0  # Present Velocity unit 0.229 rpm
+CANONICAL_TO_ID = np.array([5, 6, 4, 3, 2, 1, 7, 8])  # leg1_a -> ID5, leg1_e -> ID6, leg2_a -> ID4, ...
+HW_SIGN = np.full(8, -1.0)  # increasing tick = decreasing simulator angle, all eight motors
+# Measured settled ticks at the 79.0 mm (foot bottom below the motor axes) pose, where |q| = 0.46060782 rad,
+# shifted to the policy stand (|q| = 0.45): the tick value of action 0 for every motor.
+Z79_TICKS_ID = np.array([3283, 805, 3289, 803, 3292, 804, 3288, 810], dtype=np.float64)
+_Z79_Q_ID = 0.46060782 * np.array([1, -1, 1, -1, 1, -1, 1, -1], dtype=np.float64)
+_STAND_Q_ID = 0.45 * np.array([1, -1, 1, -1, 1, -1, 1, -1], dtype=np.float64)
+STAND_CENTER_TICKS_ID = Z79_TICKS_ID + (_STAND_Q_ID - _Z79_Q_ID) / (-1.0 * RAD_PER_TICK)  # 3289.9, 798.1, ...
+EXPECTED_ROUNDED_STAND_CENTERS_ID = np.array([3290, 798, 3296, 796, 3299, 797, 3295, 803])  # upstream calibration.py
 
 
-def rad_from_ticks(ticks) -> np.ndarray:
-  """Present Position ticks (canonical joint order) -> simulator radians."""
-  return STAND + HW_SIGN * (np.asarray(ticks, dtype=np.float64) - STAND_TICK) * RAD_PER_TICK
+def state_from_ticks(pos_ticks_id, vel_raw_id):
+  """Present Position ticks and Present Velocity raw units, both in ID order 1..8 ->
+  (q_abs, qd) in simulator radians, canonical joint order (as upstream control_math.id_state_to_canonical)."""
+  idx = CANONICAL_TO_ID - 1
+  p = np.asarray(pos_ticks_id, dtype=np.float64)[idx]
+  v = np.asarray(vel_raw_id, dtype=np.float64)[idx]
+  q_abs = STAND + HW_SIGN * (p - STAND_CENTER_TICKS_ID[idx]) * RAD_PER_TICK
+  return q_abs, HW_SIGN * v * VEL_RAW_TO_RAD_S
 
 
-def ticks_from_rad(q) -> np.ndarray:
-  """Simulator radians (canonical order) -> Goal Position ticks (rounded)."""
-  return np.rint(STAND_TICK + HW_SIGN * (np.asarray(q, dtype=np.float64) - STAND) / RAD_PER_TICK).astype(np.int64)
+def goal_ticks_from_rad(q_abs) -> np.ndarray:
+  """Target motor angles (simulator radians, canonical order) -> Goal Position ticks in ID order 1..8
+  (as upstream control_math.canonical_abs_to_id_ticks). Action 0 gives EXPECTED_ROUNDED_STAND_CENTERS_ID."""
+  # Same element-wise float32 arithmetic as upstream control_math.canonical_abs_to_id_ticks, so the
+  # rounded ticks match the deployed code exactly (under the same NumPy version).
+  q = np.asarray(q_abs, dtype=np.float32)
+  centers = np.asarray(STAND_CENTER_TICKS_ID, dtype=np.float32)
+  sign = np.asarray(HW_SIGN, dtype=np.float32)
+  q_rel = q - np.asarray(STAND, dtype=np.float32)
+  out = centers.copy()
+  for canonical_idx, id_idx in enumerate(CANONICAL_TO_ID - 1):
+    out[id_idx] = centers[id_idx] + sign[canonical_idx] * q_rel[canonical_idx] / RAD_PER_TICK
+  return np.rint(out).astype(np.int64)
 
 
 # -----------------------------------------------------------------------------

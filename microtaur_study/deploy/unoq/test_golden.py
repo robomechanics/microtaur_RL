@@ -56,5 +56,15 @@ for seq in sorted({k.split("/")[0] for k in g.files if "/" in k}):
   ok &= good
   print(f"{seq:12s} {T:4d} steps | max abs err: frame {err['frame']:.1e} (worst {worst_term[0]}), obs {err['obs']:.1e}, "
         f"action {err['action']:.1e}, target {err['target']:.1e} -> {'PASS' if good else 'FAIL'}")
+# Tick calibration (deployed robot, upstream async_deployment_v1): action 0 -> the expected stand ticks, and round trip.
+stand_ticks = mp.goal_ticks_from_rad(mp.STAND)
+tick_ok = bool(np.array_equal(stand_ticks, mp.EXPECTED_ROUNDED_STAND_CENTERS_ID))
+rng = np.random.default_rng(0)
+q = mp.STAND + rng.uniform(-0.5, 0.5, size=8)
+q_back, _ = mp.state_from_ticks(mp.goal_ticks_from_rad(q), np.zeros(8))
+tick_ok &= bool(np.abs(q_back - q).max() <= 0.5 * mp.RAD_PER_TICK + 1e-12)
+print(f"tick calibration: action 0 -> {stand_ticks.tolist()} (expected {mp.EXPECTED_ROUNDED_STAND_CENTERS_ID.tolist()}), "
+      f"round trip max {np.abs(q_back - q).max():.2e} rad -> {'PASS' if tick_ok else 'FAIL'}")
+ok &= tick_ok
 print("ALL PASS" if ok else "FAILED")
 sys.exit(0 if ok else 1)
