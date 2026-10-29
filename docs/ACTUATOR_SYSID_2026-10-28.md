@@ -108,6 +108,102 @@ that: friction is under-modelled by 0.018 N.m, which is large next to the
 holding torque but small next to the seed-to-seed spread this project has
 already measured in trained policies.
 
+## 3b. The spine is a different motor and a different kind of system
+
+Measured on the **yaw** robot, spine only (motor id 9, model number read back as
+1190 = XL330-M288, 288.4:1 against the legs' 77.3:1), driven at the robot's own
+`SPINE_P_GAIN = 3000` -- twice the legs' 1500. Suspended, legs limp and never
+commanded, goals bounded by the robot's own travel limit (1556..2496 from
+`yaw/robot_config.h`) and a +/-180 tick window about the armed position, so the
+test needs no pose calibration of any kind.
+
+| f (Hz) | amp (tk) | \|out/in\| | lag (deg) | lag_srv (ms) | peak current (mA) |
+|---|---|---|---|---|---|
+| 1.5 | 240 | 1.087 | 12.0 | 19.3 | 422 |
+| 2.0 | 177 | 1.200 | 18.8 | 23.1 | 473 |
+| 2.5 | 113 | 1.405 | 28.4 | 28.5 | 522 |
+| **3.0** | 79 | **1.559** | 55.3 | 48.2 | 670 |
+| 3.5 | 58 | 1.380 | 90.4 | 68.8 | 672 |
+| 4.0 | 44 | 0.955 | 107.7 | 71.8 | 418 |
+| 5.0 | 28 | 0.410 | 112.2 | 59.3 | 143 |
+| 6.0 | 20 | 0.307 | 110.4 | 48.0 | 70 |
+
+Peak gain 1.559 at 3.0 Hz gives `zeta = 0.341` and `omega_n = 3.0/sqrt(1-2 zeta^2)
+= 3.43 Hz`; the phase crosses -90 deg between 3.5 and 4.0 Hz, which puts
+`omega_n` at about 3.5 Hz independently. **`omega_n = 3.4 Hz`, `zeta = 0.341`.**
+
+| | legs (M077) | spine (M288) |
+|---|---|---|
+| `omega_n` | 11.0 Hz | **3.4 Hz** |
+| `zeta` | 0.292 | 0.341 |
+| `lag_srv` against frequency | **flat near 10 ms** -- a pure delay | **19 -> 48 -> 72 -> 48 ms, not flat** -- second-order dominated |
+| lag at 4.431 Hz | 21-30 deg | **about 109 deg** |
+| peak velocity reached | >= 16 900 tick/s (248 rpm), not saturated | 2 720 tick/s (39.8 rpm), current-clamped near 1300 mA |
+
+The two rows that matter are the last two. The legs' phase lag is a transport
+delay, so it is cancellable by commanding early and it is small in the gait
+band. The spine's is its own second-order response: `lag_srv` is not constant,
+so there is no single delay to cancel, and at 4.431 Hz the spine is about 109
+deg behind its command -- near antiphase -- where a leg is 21-30 deg behind.
+
+### `omega_n` is right in sim, by cancellation, and the torque is not
+
+From the compiled model (`active_yaw_microtaur/scene.xml`, `mj_fullM` at the
+default pose) the spine joint's inertia is `2.546e-3 kg.m^2` -- the `2e-4`
+armature plus `2.35e-3` of trunk. With `ACTIVE_SPINE_POSITION_KP` defaulting to
+the legs' `1.0`,
+
+```
+omega_n_sim = sqrt(1.0 / 2.546e-3) = 3.15 Hz     against 3.4 Hz measured, 7% off
+```
+
+So the simulated spine already has the right natural frequency. But `omega_n`
+only fixes the ratio `k/J`, and the peak current separates them. At 2 Hz with a
+120-tick half amplitude (0.184 rad) the hardware drew **1233 mA**:
+
+| | stiffness `k` | inertia `J` | predicted current at that motion |
+|---|---|---|---|
+| sim values | 1.0 N.m/rad | 2.546e-3 | **180 mA** |
+| from the measured current | 7.44 N.m/rad | 0.0163 | **1338 mA** |
+
+`7.44` is the leg stiffness scaled by the doubled P gain and the gear ratio
+(`2 x 3.72`), and `0.0163` is what `omega_n = 3.4 Hz` then requires. Only the
+second row reproduces the measurement.
+
+**So the simulated spine's stiffness and inertia are each about 6-7x too small,
+and the error cancels in `omega_n` while leaving the torque wrong by the same
+factor.** The same motion costs 180 mA in sim and 1233 mA on hardware. The
+0.474 N.m it actually takes also exceeds `ACTIVE_SPINE_SAFE_EFFORT_NM`
+(`0.60 * 0.52 = 0.312`) by 1.5x, so in simulation that motion would have been
+clipped rather than merely cheap.
+
+A caveat on how to split the inertia. The rotor's reflected contribution follows
+the gear ratio squared: the legs' `2e-4` at 77.3:1 implies a rotor inertia of
+`3.35e-8`, which at 288.4:1 gives `2.79e-3` for the spine. The measured total is
+`0.0163`, so about `0.0135` would have to come from the trunk, against the
+`2.35e-3` the XML currently carries. That points at the asset's mass properties
+rather than at the actuator constants, and this measurement cannot distinguish
+the two -- part of the 1233 mA is friction and stiffness rather than inertia. The
+defensible statement is the total: `k/J` is right, both are about 6-7x low, and
+the torque follows the absolute values rather than the ratio.
+
+### Narrow usable amplitude
+
+At 2 Hz, varying amplitude:
+
+| amp (tk) | 30 | 90 | 180 | 320 |
+|---|---|---|---|---|
+| `lag_srv` (ms) | **59.0** | 27.5 | **20.0** | **86.0** |
+| \|out/in\| | 0.899 | 1.134 | 1.192 | 1.346 |
+| rms error (tk) | 7.9 | 14.4 | 23.9 | **147.4** |
+| peak current (mA) | 83 | 206 | 363 | **1314** |
+
+Stiction at the bottom -- 59 ms of lag at amplitude 30, three times the
+large-amplitude value, where the legs showed a factor of 1.8 -- and torque
+saturation at the top, with 320 ticks drawing 1314 mA and leaving 147 ticks of
+rms error. The linear window is roughly 90 to 180 ticks, much narrower than the
+legs'.
+
 ## 4. What to change in the sim
 
 All of this lands in one file: `microtaur_study/src/microtaur_common/robot_constants.py`,
@@ -129,6 +225,7 @@ right to within 4% and should not move.** The damping is the problem.
 | `ARMATURE` | 2e-4 | keep | equals BAM's identified 2.0005e-4 |
 | `VELOCITY_LIMIT_RAD_S` | `0.80 * no_load` | keep | physical, not a safety cap -- see below |
 | `XL330_STALL_TORQUE_NM` | 0.215 | keep | datasheet, consistent with `kt * I_stall` |
+| `ACTIVE_SPINE_POSITION_KP` (old `env_cfgs.py`; absent from `robot_constants.py`) | defaults to the legs' 1.0 | **about 7.4**, with the spine inertia raised to match | §3b: `omega_n` is right only because `k` and `J` are both about 6-7x low. Fixing one alone moves `omega_n` off the measured 3.4 Hz. |
 
 ### `KD`: set it with the firmware's `D`, not on its own
 
