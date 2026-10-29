@@ -29,6 +29,9 @@ ap.add_argument("--reverse", action="store_true", help="walk the lane in -x: rai
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
+from microtaur_common.gpu import pick_device  # noqa: E402
+
+args.device = pick_device(args.device)  # cpu when the shared GPU is full
 app = AppLauncher(args).app
 
 import numpy as np  # noqa: E402
@@ -53,6 +56,7 @@ out.mkdir(parents=True, exist_ok=True)
 N = 60  # 6 per column -> C columns 7-9 = envs 42..59
 cfg = MicrotaurTeacherCurPlayEnvCfg()
 cfg.scene.num_envs = N
+cfg.sim.device = args.device
 cfg.c_reverse_frac = 1.0 if args.reverse else 0.0
 cfg.curriculum.command_ranges = None
 cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)

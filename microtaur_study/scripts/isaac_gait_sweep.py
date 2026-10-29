@@ -9,6 +9,8 @@ ap.add_argument("--out", required=True); ap.add_argument("--steps", type=int, de
 ap.add_argument("--set", nargs="*", default=[], help="reward weight overrides name=value (applied on top of t1)")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args(); args.headless = True
+from microtaur_common.gpu import pick_device
+args.device = pick_device(args.device)  # cpu when the shared GPU is full
 app = AppLauncher(args).app
 import numpy as np, torch
 from isaaclab.envs import ManagerBasedRLEnv
@@ -19,8 +21,8 @@ from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg
 from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg
 from microtaur_isaac.mdp.contact import foot_contact_timers
 from microtaur_isaac.mdp.observations import feet_sensor_cfg
-N = 192
-cfg = MicrotaurTeacherCurPlayEnvCfg(); cfg.scene.num_envs = N
+N = 192 if args.device.startswith("cuda") else 48
+cfg = MicrotaurTeacherCurPlayEnvCfg(); cfg.scene.num_envs = N; cfg.sim.device = args.device
 cfg.curriculum.command_ranges = None; cfg.commands.twist.resampling_time_range = (1e9, 1e9)
 rw = cfg.rewards
 T1 = {"action_rate": -0.08, "trot_gait": 1.0, "feet_air_time": 1.0, "flat_orientation_l2": -10.0, "ang_vel_xy_l2": -0.05,
