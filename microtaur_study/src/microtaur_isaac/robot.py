@@ -2,7 +2,8 @@
 
 USD: assets/rigid_microtaur/microtaur_rigid.usda, built from the MJCF by
 scripts/isaac_make_usd.py (microtaur_isaac.usd). Servo model identical to the
-mjlab one (KP 1, KD 0, 0.129 N m cap, torque-speed envelope). Joint friction:
+mjlab one (KP, KD, effort cap, torque-speed envelope and friction from
+microtaur_common.robot_constants, measured 2026-10-28). Joint friction:
 on Isaac Sim 5.x IsaacLab's `friction` is the static Coulomb torque only, so
 `dynamic_friction` is set to the same value to reproduce MuJoCo's frictionloss
 (measured 2026-09-25: with dynamic 0 a slipping joint has no friction at all).
@@ -26,8 +27,11 @@ USD_PATH = ASSET_DIR / "microtaur_rigid.usda"
 VISUAL_USD_PATH = ASSET_DIR / "microtaur_rigid_visual.usd"
 
 # Closed chain in PhysX: 16 position iterations and a 2.5 ms step keep the loop
-# closure within MuJoCo's error on trot at KD 0.045 (spike 2026-09-25); at KD 0
-# the p99 still passes but the max rises to ~5 mm (open).
+# closure within MuJoCo's error on trot at KD 0.045 (spike 2026-09-25). Re-checked
+# 2026-10-28 in the training env (scripts/isaac_closure_check.py: Teacher-Cur, DR +
+# pushes, 256 envs x 400 steps of t2 trotting, effort 0.40 stall, friction 0.028):
+# closing-joint gap p99 / max = 0.153 / 3.19 mm at KD 0, 0.136 / 1.91 mm at KD 0.0092,
+# 0.121 / 0.89 mm at KD 0.045; no env above 5 mm at any of them.
 SOLVER_POSITION_ITERATIONS = 16
 SOLVER_VELOCITY_ITERATIONS = 0
 
