@@ -107,6 +107,16 @@ def run(cmd: list, logfile: Path, cwd: Path, timeout: float) -> int:
       return -9
 
 
+def step(cmd: list, logfile: Path, cwd: Path, timeout: float, ok_file: Path) -> bool:
+  """run(); on a failure (a full shared GPU: CUDA / Warp / cusolver out of memory) once more with CPU physics."""
+  if run(cmd, logfile, cwd, timeout) == 0 and ok_file.exists():
+    return True
+  if "--device" in [str(c) for c in cmd]:
+    return False
+  log(f"  {Path(str(cmd[1])).name} failed (see {logfile.name}); retrying with --device cpu")
+  return run([*cmd, "--device", "cpu"], logfile.with_name(logfile.stem + "_cpu.log"), cwd, timeout * 2) == 0 and ok_file.exists()
+
+
 class Pipeline:
   def __init__(self, a):
     self.a = a
@@ -172,14 +182,14 @@ class Pipeline:
     """Flat gait sweep (gait type, stride, speed at 0.10 / 0.20 / 0.35) + a side-view crop of 12 steps."""
     out.mkdir(parents=True, exist_ok=True)
     j = out / f"gait_{label}.json"
-    rc = run([PY, SCRIPTS / "isaac_gait_sweep.py", "--ckpts", f"{label}={ck}", "--out", j], out / f"gait_{label}.log", self.runs, 1500)
+    ok = step([PY, SCRIPTS / "isaac_gait_sweep.py", "--ckpts", f"{label}={ck}", "--out", j], out / f"gait_{label}.log", self.runs, 1500, j)
     res = {}
-    if rc == 0 and j.exists():
+    if ok:
       r = list(json.loads(j.read_text()).values())[0]
       res = dict(r)
       res["pronk"] = r["same_end"] > 0.2 and r["same_side"] > 0.2 and r["flight"] > 0.15
-      m = re.search(rf"^\s*{re.escape(label)}: (.*?) vx \{{", (out / f"gait_{label}.log").read_text(errors="ignore"), re.M)
-      res["line"] = m.group(1) if m else ""
+      res["line"] = (f"flight {r['flight']:.2f} four {r['four']:.2f} diag {r['diag']:+.2f} same_end {r['same_end']:+.2f} "
+                     f"same_side {r['same_side']:+.2f} stride {r['stride_hz']:.1f} Hz")
     self.video(ck, out / f"{label}_flat_side.mp4", env=0, steps=150, eye=(0.05, -0.40, 0.10), lookat=(0.05, 0, 0.03), crop=True)
     return res
 
@@ -187,9 +197,8 @@ class Pipeline:
     free = gpu_free_mib()
     dev = ["--device", "cpu"] if free is not None and free < 4000 else []  # physics on the CPU when the GPU is full
     cmd = [PY, SCRIPTS / "isaac_render_policy.py", "--checkpoint", ck, "--env", env, "--steps", steps, "--out", mp4,
-           "--eye", *eye, "--lookat", *lookat, *dev] + (["--tour"] if tour else [])
-    rc = run(cmd, mp4.with_suffix(".log"), self.runs, 1500)
-    ok = rc == 0 and mp4.exists()
+           "--eye", *eye, "--lookat", *lookat] + (["--tour"] if tour else []) + dev
+    ok = step(cmd, mp4.with_suffix(".log"), self.runs, 1500, mp4)
     if ok and crop:
       import imageio
       import numpy as np
@@ -214,13 +223,17 @@ class Pipeline:
     log(f"eval {label}: {ck} -> {d}", out / "progress.md")
     g = self.gait(ck, label, vid)
     n_terrain = 40 if self.smoke else 500
-    run([PY, SCRIPTS / "isaac_eval_terrain.py", "--checkpoint", ck, "--out", d, "--num-envs", n_terrain], d / "terrain_eval.stdout", self.runs, 3600)
-    run([PY, SCRIPTS / "isaac_c_posture.py", "--checkpoint", ck, "--out", d / "c_posture"], d / "c_posture.log", self.runs, 1800)
-    run([PY, SCRIPTS / "isaac_turn_legs.py", "--checkpoint", ck, "--label", label, "--out", d], d / "turn_legs.log", self.runs, 1800)
+    step([PY, SCRIPTS / "isaac_eval_terrain.py", "--checkpoint", ck, "--out", d, "--num-envs", n_terrain], d / "terrain_eval.stdout",
+         self.runs, 3600, d / "terrain_eval.json")
+    step([PY, SCRIPTS / "isaac_c_posture.py", "--checkpoint", ck, "--out", d / "c_posture"], d / "c_posture.log", self.runs, 1800,
+         d / "c_posture" / "c_posture.txt")
+    step([PY, SCRIPTS / "isaac_turn_legs.py", "--checkpoint", ck, "--label", label, "--out", d], d / "turn_legs.log", self.runs, 1800,
+         d / f"turn_legs_{label}.txt")
     steps = 40 if self.smoke else 420
     for env, name, eye, look in TERRAIN_VIDEOS:
       self.video(ck, vid / f"{label}_{name}.mp4", env=env, steps=steps, eye=eye, lookat=look)
-    self.video(ck, vid / f"{label}_turn_tour.mp4", env=0, steps=0, eye=(0.0, -0.75, 0.75), lookat=(0, 0, 0), tour=True)
+    self.video(ck, vid / f"{label}_turn_tour.mp4", env=0, steps=0, eye=(0.0, -0.55, 0.45), lookat=(0, 0, 0), tour=True)
+    self.video(ck, vid / f"{label}_turn_tour_top.mp4", env=0, steps=0, eye=(0.0, -0.02, 0.60), lookat=(0, 0, 0), tour=True)
     self.summarize(label, ck, d, g, out)
     log(f"eval {label} done: {out / 'summary.md'}", out / "progress.md")
     return d
@@ -299,7 +312,8 @@ def main():
       vid = out / label / "videos"
       for env, nm, eye, look in TERRAIN_VIDEOS:
         P.video(ck, vid / f"{label}_{nm}.mp4", env=env, steps=420, eye=eye, lookat=look)
-      P.video(ck, vid / f"{label}_turn_tour.mp4", env=0, steps=0, eye=(0.0, -0.75, 0.75), lookat=(0, 0, 0), tour=True)
+      P.video(ck, vid / f"{label}_turn_tour.mp4", env=0, steps=0, eye=(0.0, -0.55, 0.45), lookat=(0, 0, 0), tour=True)
+      P.video(ck, vid / f"{label}_turn_tour_top.mp4", env=0, steps=0, eye=(0.0, -0.02, 0.60), lookat=(0, 0, 0), tour=True)
       P.gait(ck, label, vid)
     return
   teacher_ck = Path(a.teacher_ckpt) if a.teacher_ckpt else None

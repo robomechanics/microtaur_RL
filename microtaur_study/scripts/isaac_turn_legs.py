@@ -126,11 +126,13 @@ lines += ["", f"virtual leg r (mm), straight trotting; stand pose r = {res['stan
 res["legs"] = []
 for j in range(4):
   s, sw = r[:, j][c[:, j]], r[:, j][~c[:, j]]
-  row = {"leg": j + 1, "stance_mean": float(s.mean()), "stance_min": float(s.min()), "stance_max": float(s.max()),
-         "swing_min": float(sw.min()) if sw.size else None, "theta_min": float(th[:, j].min()), "theta_max": float(th[:, j].max())}
+  stat = lambda v, fn: float(fn(v)) if v.size else None  # noqa: E731  (a leg may never swing / never touch down)
+  row = {"leg": j + 1, "stance_mean": stat(s, np.mean), "stance_min": stat(s, np.min), "stance_max": stat(s, np.max),
+         "swing_min": stat(sw, np.min), "theta_min": stat(th[:, j], np.min), "theta_max": stat(th[:, j], np.max)}
   res["legs"].append(row)
-  lines.append(f" {j + 1}  | {row['stance_mean']:6.1f}  {row['stance_min']:5.1f} {row['stance_max']:5.1f} | {row['swing_min']:6.1f} "
-               f"               | {row['theta_min']:+.1f} .. {row['theta_max']:+.1f}")
+  f = lambda v, w=6, p=1, sign="": " " * (w - 3) + "n/a" if v is None else f"{v:{sign}{w}.{p}f}"  # noqa: E731
+  lines.append(f" {j + 1}  | {f(row['stance_mean'])}  {f(row['stance_min'], 5)} {f(row['stance_max'], 5)} | {f(row['swing_min'])} "
+               f"               | {f(row['theta_min'], 5, 1, '+')} .. {f(row['theta_max'], 5, 1, '+')}")
 (out / f"turn_legs_{args.label}.txt").write_text("\n".join(lines) + "\n")
 (out / f"turn_legs_{args.label}.json").write_text(json.dumps(res, indent=1))
 print("\n".join(lines), flush=True)
