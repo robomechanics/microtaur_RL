@@ -37,6 +37,9 @@ ap.add_argument("--blind", action="store_true",
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
+from microtaur_common.gpu import pick_device  # noqa: E402
+
+args.device = pick_device(args.device)  # cpu when the shared GPU is full
 app = AppLauncher(args).app
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -67,6 +70,7 @@ if args.terrain_scale is None:
 cur = y.exists() and re.search(r"^cur_terrain: true", y.read_text(), re.M) is not None
 cfg = (MicrotaurTeacherCurPlayEnvCfg if cur else MicrotaurTeacherPlayEnvCfg)(terrain_scale=args.terrain_scale, **variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = args.num_envs
+cfg.sim.device = args.device
 cfg.curriculum.command_ranges = None
 cfg.commands.twist.resampling_time_range = (1.0e9, 1.0e9)
 m = re.search(r"action_scale_rad: ([0-9.eE+-]+)", y.read_text()) if y.exists() else None

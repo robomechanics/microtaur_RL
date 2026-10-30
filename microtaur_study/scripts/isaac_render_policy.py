@@ -31,6 +31,12 @@ ap.add_argument("--still-eye", type=float, nargs=3, default=None, help="extra st
 ap.add_argument("--tour", action="store_true",
                 help="turn tour instead of straight --speed: TOUR segments (vx, yaw rate, s); frames carry the command, the "
                      "measured yaw rate and (yaw robot) the spine angle")
+ap.add_argument("--schedule", default=None,
+                help='custom command segments "vx,wz,seconds;vx,wz,seconds;..." (implies the --tour overlay), e.g. a circle '
+                     '"0.10,0.25,30"')
+ap.add_argument("--fixed-cam", action="store_true", help="camera stays where it starts (eye / lookat relative to the spawn)")
+ap.add_argument("--trace", action="store_true",
+                help="also save <out>.npz per policy step: time, command, yaw rate, root xy / yaw, spine angle, foot contacts")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
@@ -51,6 +57,9 @@ from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_
 LEVELS = [0, 3, 0, 2, 4, 6, 7, 0, 3, 6]  # per env / column
 # straight, left, straight, right, straight; +-0.25 rad/s is the trained yaw-rate range (86 deg per 6 s turn)
 TOUR = [(0.20, 0.0, 3.0), (0.15, 0.25, 6.0), (0.20, 0.0, 2.0), (0.15, -0.25, 6.0), (0.20, 0.0, 3.0)]
+if args.schedule:
+  TOUR = [tuple(float(v) for v in seg.split(",")) for seg in args.schedule.split(";")]
+  args.tour = True
 cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = 10
 cfg.sim.device = args.device  # --device cpu: physics on the CPU when the shared GPU is full (rendering stays on the GPU)
@@ -107,6 +116,9 @@ tgt[2] = float(t.env_origins[args.env, 2]) + 0.07
 
 
 def follow():
+  if args.fixed_cam:
+    cc.update_view_location(eye=tgt + eye_off, lookat=tgt + look_off)
+    return
   p = robot.data.root_link_pos_w[args.env].cpu().numpy()
   if np.linalg.norm(p[:2] - tgt[:2]) > 0.5:  # after a reset
     tgt[:2] = p[:2]
@@ -117,6 +129,12 @@ def follow():
 follow()
 frames, resets = [], {}
 spine = robot.joint_names.index("spine_joint_act") if "spine_joint_act" in robot.joint_names else None
+trace = {k: [] for k in ("t", "cmd_vx", "cmd_wz", "wz", "vx", "x", "y", "yaw", "spine", "contact")}
+if args.trace:
+  from microtaur_isaac.mdp.contact import foot_contact_timers
+  from microtaur_isaac.mdp.observations import feet_sensor_cfg
+  fsc = feet_sensor_cfg()
+  fsc.resolve(env.scene)
 with torch.inference_mode():
   for k in range(args.steps):
     pin(k)
@@ -132,6 +150,16 @@ with torch.inference_mode():
         env.sim.render()
       imageio.imwrite(args.out.replace(".mp4", "_still.png"), env.render())
     follow()
+    if args.trace:
+      d, e = robot.data, args.env
+      q = d.root_link_quat_w[e]
+      for key, v in (("t", k * env.step_dt), ("cmd_vx", command(k)[0]), ("cmd_wz", command(k)[1]),
+                     ("wz", float(d.root_link_ang_vel_b[e, 2])), ("vx", float(d.root_link_lin_vel_b[e, 0])),
+                     ("x", float(d.root_link_pos_w[e, 0] - t.env_origins[e, 0])), ("y", float(d.root_link_pos_w[e, 1] - t.env_origins[e, 1])),
+                     ("yaw", float(torch.atan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] ** 2 + q[3] ** 2)))),
+                     ("spine", float(d.joint_pos[e, spine]) if spine is not None else 0.0),
+                     ("contact", foot_contact_timers(env, fsc)[0][e].cpu().numpy().astype(float))):
+        trace[key].append(v)
     img = env.render()
     if args.tour:
       from PIL import Image, ImageDraw, ImageFont
@@ -140,11 +168,16 @@ with torch.inference_mode():
       if spine is not None:
         txt += f"  spine {np.degrees(float(robot.data.joint_pos[args.env, spine])):+5.1f} deg"
       im = Image.fromarray(img)
-      ImageDraw.Draw(im).text((12, 12), txt, fill=(255, 0, 0), font=ImageFont.load_default(size=20))
+      font, dr = ImageFont.load_default(size=20), ImageDraw.Draw(im)
+      x0, y0, x1, y1 = dr.textbbox((12, 12), txt, font=font)
+      dr.rectangle((x0 - 6, y0 - 4, x1 + 6, y1 + 4), fill=(0, 0, 0))  # readable on the light floor
+      dr.text((12, 12), txt, fill=(255, 255, 255), font=font)
       img = np.asarray(im)
     frames.append(img)
 Path(args.out).parent.mkdir(parents=True, exist_ok=True)
 imageio.mimsave(args.out, frames, fps=round(1.0 / env.step_dt))
+if args.trace:
+  np.savez(args.out.replace(".mp4", ".npz"), **{k: np.asarray(v) for k, v in trace.items()})
 r = robot.data.root_link_pos_w[args.env] - t.env_origins[args.env]
 print("VIDEO_OK", args.out, "resets", resets, "final root rel origin", [round(float(v), 3) for v in r], flush=True)
 sys.stdout.flush()
