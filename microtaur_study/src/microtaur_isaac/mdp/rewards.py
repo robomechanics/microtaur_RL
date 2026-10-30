@@ -1,0 +1,366 @@
+"""D1 reward (IsaacLab): command tracking, motor energy, action rate,
+termination penalty and a trot-gait kernel. Port of microtaur_rigid/rewards.py.
+
+  r = + 1.0   * exp(-|v_xy_cmd - v_xy|^2 / 0.10^2)          track_lin_vel_xy
+      + 0.5   * exp(-(w_z_cmd - w_z)^2 / 0.15^2)            track_ang_vel_z
+      + w_E   * sum_j (|tau_j qd_j| + c_j tau_j^2) / (m g v_ref)   motor_energy (curriculum)
+      - 0.05/8 * sum_j (a_j - a_j,prev)^2                   action_rate
+      - 2.0/dt per non-timeout termination                  termination
+      + 2.0   * trot kernel (Spot GaitReward)               trot_gait
+      + w_A   * Spot air_time_reward (phase durations)      feet_air_time (0 = off by default)
+      + w_o * g_xy^2 + w_z * v_z^2 + w_w * |w_xy|^2           body posture (0 = off by default)
+      + w_h * exp(-(integral of yaw-rate error)^2 / s^2)      heading_tracking (0 = off by default)
+
+Weights come from task_params.WEIGHTS; the maths from reward_math. IsaacLab's
+RewardManager.compute multiplies every term by weight * step_dt (checked in
+isaaclab/managers/reward_manager.py and by tests/check_isaac_mdp.py), the same
+as mjlab, so task_params' weights carry over unchanged (termination:
+-2.0/0.035 * 0.035 = -2.0 per termination). Terms with weight 0 are skipped.
+
+IsaacLab vs mjlab:
+  * motor torque: mjlab uses qfrc_actuator; here robot.data.applied_torque on
+    the 8 motor joints. For explicit actuators (DCMotorCfg) applied_torque is
+    the PD torque AFTER the DC-motor torque-speed clip and effort_limit, the
+    value written to PhysX as joint effort (Articulation._apply_actuator_model).
+    It is from the last physics substep of the policy step, and joint_vel is
+    after that substep, as in mjlab. For an ImplicitActuatorCfg it would only be
+    an estimate (PhysX computes the drive torque itself), so the motors must
+    use an explicit actuator. Joint friction (frictionloss) is not included in
+    either simulator.
+  * is_terminated: termination_manager.terminated = OR of the terms with
+    time_out=False, computed in the same step before the reward, same as mjlab.
+  * trot_gait: air / contact times from mdp.contact.foot_contact_timers, NOT
+    the sensor's current_air_time / current_contact_time: PhysX gives a resting
+    foot zero impulse in some substeps, which restarted the sensor's timers
+    every ~10 ms and let foot chatter score as a perfect trot (flat_pilot2).
+    Contact = |net force| > force_threshold in any substep of the policy step;
+    timers at the policy rate (mjlab: geometric contact, per substep).
+  * finite inputs: an env whose PhysX state blew up (terminations.physics_unstable)
+    still gets one reward before its reset; the simulator quantities read here
+    pass through _finite() so that reward, and the metric sums, stay finite.
+  * metrics: IsaacLab has no metrics manager. energy_speed_metrics is a reward
+    term that returns zeros (weight 1, so the manager does not skip it),
+    accumulates per-step mechanical / copper power and forward speed, and on
+    reset writes the episode means of the resetting envs to
+    env.extras["log"]["Episode_Metrics/<name>"] (mjlab's key format).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+import torch
+
+import isaaclab.envs.mdp as il_mdp
+from isaaclab.managers import CurriculumTermCfg, ManagerTermBase, RewardTermCfg, SceneEntityCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.math import quat_apply
+
+from microtaur_common import reward_math as RM
+from microtaur_common.robot_constants import EXPECTED_TOTAL_MASS_KG, XL330_COPPER_W_PER_NM2
+from microtaur_common.task_params import (  # noqa: F401  (re-exported)
+  AIR_TIME_MODE_S, AIR_TIME_VELOCITY_THRESHOLD_M_S, AIR_TIME_WEIGHT, COMMAND_NAME, HEADING_MAX_ERR_RAD, HEADING_SIGMA_RAD, ENERGY_REF_SPEED_M_S, GAIT_MAX_ERR_S, GAIT_STD_S2, GRAVITY, LIN_VEL_SIGMA_M_S, TROT_PAIRS,
+  WEIGHTS, YAW_RATE_SIGMA_RAD_S, energy_weight_stages,
+)
+
+from .contact import foot_contact_timers
+from .terminations import UNSTABLE_ANG_VEL_RAD_S, UNSTABLE_LIN_VEL_M_S, physics_unstable
+from .. import foot_offsets_in_body
+from .observations import ROBOT, feet_body_cfg, feet_sensor_cfg, legs_cfg
+
+if TYPE_CHECKING:
+  from isaaclab.envs import ManagerBasedRLEnv
+
+
+def _finite(x: torch.Tensor) -> torch.Tensor:
+  return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def track_lin_vel_xy(
+  env: ManagerBasedRLEnv, command_name: str, sigma: float, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)
+) -> torch.Tensor:
+  return RM.lin_vel_tracking(
+    env.command_manager.get_command(command_name), _finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b), sigma
+  )
+
+
+def track_ang_vel_z(
+  env: ManagerBasedRLEnv, command_name: str, sigma: float, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)
+) -> torch.Tensor:
+  return RM.yaw_rate_tracking(
+    env.command_manager.get_command(command_name), _finite(env.scene[asset_cfg.name].data.root_link_ang_vel_b), sigma
+  )
+
+
+def motor_power_w(
+  env: ManagerBasedRLEnv, copper_w_per_nm2: float, asset_cfg: SceneEntityCfg
+) -> tuple[torch.Tensor, torch.Tensor]:
+  """Per-env (|mechanical|, copper) power in W summed over the asset_cfg joints
+  (the 8 motors, + the spine on the yaw robot). Torque = applied_torque (after the DC-motor clip).
+  copper_w_per_nm2: one value for all joints, or one per joint (the yaw robot's spine is a different gearbox)."""
+  d = env.scene[asset_cfg.name].data
+  ids = asset_cfg.joint_ids
+  tau, qd = _finite(d.applied_torque[:, ids]), _finite(d.joint_vel[:, ids])
+  if isinstance(copper_w_per_nm2, (int, float)):
+    return RM.motor_power(tau, qd, copper_w_per_nm2)
+  c = torch.as_tensor(copper_w_per_nm2, device=tau.device, dtype=tau.dtype)
+  return torch.sum(torch.abs(tau * qd), dim=1), torch.sum(c * torch.square(tau), dim=1)
+
+
+def motor_energy(
+  env: ManagerBasedRLEnv, copper_w_per_nm2: float, mass_kg: float, ref_speed_m_s: float, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+  """Electrical power as cost of transport at ref_speed_m_s (positive; the
+  curriculum's weight is negative)."""
+  mech, copper = motor_power_w(env, copper_w_per_nm2, asset_cfg)
+  return (mech + copper) / (mass_kg * GRAVITY * ref_speed_m_s)
+
+
+def trot_gait(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, pairs, std: float, max_err: float) -> torch.Tensor:
+  _, air, con = foot_contact_timers(env, sensor_cfg)
+  return RM.trot_gait(air, con, pairs, std, max_err)
+
+
+def feet_air_time(
+  env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, mode_time_s: float, velocity_threshold_m_s: float,
+  command_name: str = COMMAND_NAME, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT),
+) -> torch.Tensor:
+  """IsaacLab Spot air_time_reward on the policy-step contact timers of mdp.contact
+  (Spot reads the sensor's timers, which flicker here; see contact.py)."""
+  _, air, con = foot_contact_timers(env, sensor_cfg)
+  cmd = torch.linalg.norm(env.command_manager.get_command(command_name), dim=1)
+  speed = torch.linalg.norm(_finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, :2]), dim=1)
+  return RM.air_time_spot(air, con, cmd, speed, mode_time_s, velocity_threshold_m_s)
+
+
+def feet_slide(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+  """IsaacLab / legged_gym feet_slide: sum over feet in contact of the foot's horizontal
+  speed (m/s). Velocity of the foot sphere centre (body velocity + w x r, the foot is an
+  offset point on leglink2), contact from the policy-step timers of mdp.contact."""
+  contact, _, _ = foot_contact_timers(env, sensor_cfg)
+  robot = env.scene[asset_cfg.name]
+  d = robot.data
+  quat = d.body_link_quat_w[:, asset_cfg.body_ids]
+  off = torch.tensor(foot_offsets_in_body(robot.joint_names), device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
+  r = quat_apply(quat.reshape(-1, 4), off.reshape(-1, 3)).reshape(off.shape)
+  v = _finite(d.body_link_lin_vel_w[:, asset_cfg.body_ids]) + torch.cross(_finite(d.body_link_ang_vel_w[:, asset_cfg.body_ids]), r, dim=-1)
+  # a PhysX blow-up step (truncated by physics_unstable) can leave NaN poses: clean the result, clamp keeps NaN
+  speed = _finite(torch.linalg.norm(v[..., :2], dim=-1)).clamp(max=_VEL_CLAMP)
+  return torch.sum(speed * contact.float(), dim=1)
+
+
+# --- body posture (IsaacLab velocity task / legged_gym standard terms) -------------
+# Same formulas as isaaclab.envs.mdp.{flat_orientation_l2, lin_vel_z_l2, ang_vel_xy_l2};
+# inputs cleaned and clamped because a PhysX blow-up step (truncated by
+# physics_unstable) still gets one reward and would square ~1e11 velocities.
+_VEL_CLAMP = 10.0
+
+
+def flat_orientation_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  """sum(projected_gravity_xy^2) = sin^2(tilt): body roll/pitch (legged_gym "orientation")."""
+  g = _finite(env.scene[asset_cfg.name].data.projected_gravity_b[:, :2])
+  return torch.sum(torch.square(g), dim=1)
+
+
+def lin_vel_z_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  v = torch.clamp(_finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, 2]), -_VEL_CLAMP, _VEL_CLAMP)
+  return torch.square(v)
+
+
+def ang_vel_xy_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  w = torch.clamp(_finite(env.scene[asset_cfg.name].data.root_link_ang_vel_b[:, :2]), -_VEL_CLAMP, _VEL_CLAMP)
+  return torch.sum(torch.square(w), dim=1)
+
+
+def forward_speed_m_s(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  return _finite(env.scene[asset_cfg.name].data.root_link_lin_vel_b[:, 0])
+
+
+METRIC_NAMES = ("mechanical_power_w", "copper_power_w", "forward_speed_m_s")
+
+
+class heading_tracking(ManagerTermBase):
+  """Dedicated turning term: exp(-e^2 / sigma^2), e = integral of (commanded - actual)
+  yaw rate since the command was last resampled (or the episode reset), clamped to
+  +-max_err_rad.
+
+  The instantaneous yaw-rate term cannot see a mean turn under the trot's +-0.5 rad/s
+  per-step body yaw (it is larger than the commands, so tracking the mean changes that
+  term by ~10%). Integrated, the per-step oscillation cancels while a missing turn or a
+  constant drift accumulates, so this term separates them. On straight commands it
+  penalises the accumulated heading drift.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+    super().__init__(cfg, env)
+    self._err = torch.zeros(env.num_envs, device=env.device)
+    self._counter = None
+
+  def reset(self, env_ids: Sequence[int] | None = None) -> None:
+    self._err[slice(None) if env_ids is None else env_ids] = 0.0
+
+  def __call__(self, env: ManagerBasedRLEnv, sigma_rad: float, max_err_rad: float,
+               command_name: str = COMMAND_NAME, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+    term = env.command_manager.get_term(command_name)
+    counter = term.command_counter.clone()
+    if self._counter is not None:
+      self._err = torch.where(counter != self._counter, torch.zeros_like(self._err), self._err)  # new command
+    self._counter = counter
+    wz = _finite(env.scene[asset_cfg.name].data.root_link_ang_vel_b[:, 2])
+    self._err = torch.clamp(self._err + (term.command[:, 2] - wz) * env.step_dt, -max_err_rad, max_err_rad)
+    return torch.exp(-torch.square(self._err) / sigma_rad**2)
+
+
+class energy_speed_metrics(ManagerTermBase):
+  """Logging-only reward term (returns zeros; give it weight 1.0).
+
+  Keeps per-env episode sums of mechanical power, copper power (W) and forward
+  speed (m/s) and, on reset, writes the mean over the resetting envs of their
+  per-step episode average to env.extras["log"]["Episode_Metrics/<name>"].
+  RewardManager.reset runs after ManagerBasedRLEnv._reset_idx has created
+  extras["log"], so the values reach the runner's episode logging.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+    super().__init__(cfg, env)
+    self._sums = torch.zeros(env.num_envs, len(METRIC_NAMES), device=env.device)
+    self._count = torch.zeros(env.num_envs, device=env.device)
+    self.last = torch.zeros(env.num_envs, len(METRIC_NAMES), device=env.device)
+
+  def reset(self, env_ids: Sequence[int] | None = None) -> None:
+    if env_ids is None:
+      env_ids = slice(None)
+    counts = torch.clamp(self._count[env_ids], min=1.0)
+    means = torch.mean(self._sums[env_ids] / counts[:, None], dim=0)
+    log = getattr(self._env, "extras", {}).get("log")
+    if isinstance(log, dict):
+      for k, name in enumerate(METRIC_NAMES):
+        log[f"Episode_Metrics/{name}"] = means[k]
+    self._sums[env_ids] = 0.0
+    self._count[env_ids] = 0.0
+
+  def __call__(
+    self, env: ManagerBasedRLEnv, copper_w_per_nm2: float, asset_cfg: SceneEntityCfg
+  ) -> torch.Tensor:
+    mech, copper = motor_power_w(env, copper_w_per_nm2, asset_cfg)
+    self.last = torch.stack((mech, copper, forward_speed_m_s(env)), dim=1)
+    # A step whose PhysX state blew up (finite but ~1e11 velocities) is left out.
+    ok = ~physics_unstable(env, UNSTABLE_LIN_VEL_M_S, UNSTABLE_ANG_VEL_RAD_S)
+    self._sums += torch.where(ok[:, None], self.last, torch.zeros_like(self.last))
+    self._count += ok.float()
+    return torch.zeros(env.num_envs, device=env.device)
+
+
+@configclass
+class MicrotaurRewardsCfg:
+  track_lin_vel_xy = RewardTermCfg(
+    func=track_lin_vel_xy, weight=WEIGHTS["track_lin_vel_xy"],
+    params={"command_name": COMMAND_NAME, "sigma": LIN_VEL_SIGMA_M_S},
+  )
+  track_ang_vel_z = RewardTermCfg(
+    func=track_ang_vel_z, weight=WEIGHTS["track_ang_vel_z"],
+    params={"command_name": COMMAND_NAME, "sigma": YAW_RATE_SIGMA_RAD_S},
+  )
+  motor_energy = RewardTermCfg(
+    func=motor_energy, weight=0.0,  # set by the energy curriculum
+    params={
+      "copper_w_per_nm2": XL330_COPPER_W_PER_NM2,
+      "mass_kg": EXPECTED_TOTAL_MASS_KG,
+      "ref_speed_m_s": ENERGY_REF_SPEED_M_S,
+      "asset_cfg": legs_cfg(),
+    },
+  )
+  action_rate = RewardTermCfg(func=il_mdp.action_rate_l2, weight=WEIGHTS["action_rate"])
+  termination = RewardTermCfg(func=il_mdp.is_terminated, weight=WEIGHTS["termination"])
+  trot_gait = RewardTermCfg(
+    func=trot_gait, weight=WEIGHTS["trot_gait"],
+    params={"sensor_cfg": feet_sensor_cfg(), "pairs": TROT_PAIRS, "std": GAIT_STD_S2, "max_err": GAIT_MAX_ERR_S},
+  )
+  feet_air_time = RewardTermCfg(
+    func=feet_air_time, weight=AIR_TIME_WEIGHT,
+    params={"sensor_cfg": feet_sensor_cfg(), "mode_time_s": AIR_TIME_MODE_S,
+            "velocity_threshold_m_s": AIR_TIME_VELOCITY_THRESHOLD_M_S},
+  )
+  # Stance-foot slip (IsaacLab / legged_gym feet_slide; -0.25 in IsaacLab's velocity task), off by default.
+  feet_slide = RewardTermCfg(func=feet_slide, weight=0.0,
+                             params={"sensor_cfg": feet_sensor_cfg(), "asset_cfg": feet_body_cfg()})
+  # Body posture, off by default (weight 0). Standard values: flat_orientation_l2
+  # -2.5 (IsaacLab A1/Go1/Go2 flat) / -5.0 (ANYmal flat, legged_gym ANYmal-C flat);
+  # lin_vel_z_l2 -2.0 and ang_vel_xy_l2 -0.05 (legged_gym and IsaacLab defaults).
+  flat_orientation_l2 = RewardTermCfg(func=flat_orientation_l2, weight=0.0)
+  lin_vel_z_l2 = RewardTermCfg(func=lin_vel_z_l2, weight=0.0)
+  ang_vel_xy_l2 = RewardTermCfg(func=ang_vel_xy_l2, weight=0.0)
+  # Dedicated turning term (heading error integrated since the last command), off by default.
+  heading_tracking = RewardTermCfg(func=heading_tracking, weight=0.0,
+                                   params={"sigma_rad": HEADING_SIGMA_RAD, "max_err_rad": HEADING_MAX_ERR_RAD})
+  metrics = RewardTermCfg(
+    func=energy_speed_metrics, weight=1.0,
+    params={"copper_w_per_nm2": XL330_COPPER_W_PER_NM2, "asset_cfg": legs_cfg()},
+  )
+
+
+def make_rewards_cfg(variant: str = "rigid") -> MicrotaurRewardsCfg:
+  cfg = MicrotaurRewardsCfg()
+  if variant == "yaw":
+    from microtaur_common.robot_constants import SPINE_COPPER_W_PER_NM2, YAW_TOTAL_MASS_KG
+
+    from .observations import motors_cfg
+    copper = (XL330_COPPER_W_PER_NM2,) * 8 + (SPINE_COPPER_W_PER_NM2,)
+    cfg.motor_energy.params.update({"copper_w_per_nm2": copper, "mass_kg": YAW_TOTAL_MASS_KG, "asset_cfg": motors_cfg("yaw")})
+    cfg.metrics.params.update({"copper_w_per_nm2": copper, "asset_cfg": motors_cfg("yaw")})
+  return cfg
+
+
+def reward_weight_stages(env: ManagerBasedRLEnv, env_ids, reward_name: str, stages: Sequence[dict]) -> dict:
+  """Curriculum: the weight of the last stage whose "step" the env's
+  common_step_counter has reached (>=, as mjlab's reward_curriculum; IsaacLab's
+  modify_reward_weight uses > and a single step). Before the first stage the
+  cfg weight is left unchanged. IsaacLab calls curriculum terms from
+  _reset_idx only, i.e. whenever some env resets."""
+  del env_ids
+  step = int(env.common_step_counter)
+  term = env.reward_manager.get_term_cfg(reward_name)
+  reached = [s for s in stages if step >= s["step"]]
+  if reached:
+    term.weight = float(reached[-1]["weight"])
+    env.reward_manager.set_term_cfg(reward_name, term)
+  return {"weight": torch.tensor(float(term.weight)), "step": torch.tensor(float(step))}
+
+
+def reward_schedule(env: ManagerBasedRLEnv, env_ids, stages: Sequence[str]) -> dict:
+  """Curriculum: apply the last stage whose step (policy steps, common_step_counter) has been
+  reached. A stage is a string "STEP|term.weight=v|term.param=v|..." (flat strings because
+  IsaacLab's cfg update rejects new dict keys from Hydra); "off" is ignored. Before the first
+  stage the cfg values stay. Used to let the gait form under one reward set and switch others
+  in later (pronk diagnosis 2026-09-26)."""
+  del env_ids
+  step = int(env.common_step_counter)
+  parsed = []
+  for st in stages or []:
+    if st == "off":
+      continue
+    head, *items = str(st).split("|")
+    parsed.append((int(head), [(k.split(".", 1), float(v)) for k, v in (it.split("=", 1) for it in items)]))
+  reached = [p for p in parsed if step >= p[0]]
+  if reached:
+    rm = env.reward_manager
+    for (name, attr), v in reached[-1][1]:
+      cfg = rm.get_term_cfg(name)
+      if attr == "weight":
+        cfg.weight = v
+      else:
+        cfg.params[attr] = v
+      rm.set_term_cfg(name, cfg)
+  return {"stage": torch.tensor(float(len(reached)))}
+
+
+def make_energy_curriculum_term(energy_weight: float | None = None) -> CurriculumTermCfg:
+  """energy_weight is the ramp's final value (default WEIGHTS['motor_energy'];
+  negative, since motor_energy returns a positive cost)."""
+  if energy_weight is None:
+    energy_weight = WEIGHTS["motor_energy"]
+  return CurriculumTermCfg(
+    func=reward_weight_stages,
+    params={"reward_name": "motor_energy", "stages": energy_weight_stages(energy_weight)},
+  )
