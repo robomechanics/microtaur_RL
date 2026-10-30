@@ -9,6 +9,8 @@ Mirror of the robot (reflection y -> -y):
   legs     leg1 RR <-> leg2 RL, leg4 FR <-> leg3 FL; every joint angle of the partner
            leg is negated (LEG_SIGNS flip between mirror legs, so FK(leg2, -a, -e) is
            FK(leg1, a, e) in the shared leg-plane frame; checked in tests/check_isaac_symmetry.py)
+  spine    (yaw robot, 9th motor value) negated: a left yaw is a right yaw in the mirror
+  leg-plane terms (foot_fk, leg_polar)  per-leg values are unchanged by the mirror: only the legs swap
   vectors  linear velocity / gravity / forces (x, y, z) -> (x, -y, z);
            angular velocity (x, y, z) -> (-x, y, -z); command (vx, vy, wz) -> (vx, -vy, -wz)
 The per-group layout is read from the observation manager (term names and dims), so
@@ -28,14 +30,21 @@ _VEC_SIGN = {
   "base_ang_vel": (-1.0, 1.0, -1.0),
   "projected_gravity": (1.0, -1.0, 1.0),
   "command": (1.0, -1.0, -1.0),
+  "imu2_projected_gravity": (1.0, -1.0, 1.0),
+  "imu2_base_ang_vel": (-1.0, 1.0, -1.0),
 }
 _JOINT_TERMS = ("joint_pos", "joint_vel", "actions")
 _FOOT_TERMS = ("foot_height", "foot_air_time", "foot_contact")
 
 
 def mirror_joints(x: torch.Tensor) -> torch.Tensor:
-  """[..., 8] motor values in canonical order -> mirrored robot."""
-  return -x[..., list(JOINT_PERM)]
+  """[..., 8] leg motor values in canonical order (or [..., 9] with the yaw robot's spine last) -> mirrored robot."""
+  legs = -x[..., list(JOINT_PERM)]
+  if x.shape[-1] == 8:
+    return legs
+  if x.shape[-1] == 9:
+    return torch.cat((legs, -x[..., 8:9]), dim=-1)
+  raise ValueError(f"mirror_joints: expected 8 or 9 motor values, got {x.shape[-1]}")
 
 
 def _mirror_term(name: str, x: torch.Tensor, env) -> torch.Tensor:
@@ -45,6 +54,8 @@ def _mirror_term(name: str, x: torch.Tensor, env) -> torch.Tensor:
     return mirror_joints(x)
   if name in _FOOT_TERMS:
     return x[:, list(FOOT_PERM)]
+  if name in ("foot_fk", "leg_polar"):  # [N, 4 legs x 2]
+    return x.reshape(-1, 4, 2)[:, list(FOOT_PERM)].reshape(-1, 8)
   if name == "foot_contact_forces":  # [N, 4 feet x (fx, fy, fz)]
     f = x.reshape(-1, 4, 3)[:, list(FOOT_PERM)]
     return (f * torch.tensor((1.0, -1.0, 1.0), device=x.device, dtype=x.dtype)).reshape(-1, 12)

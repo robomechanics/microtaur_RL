@@ -50,14 +50,14 @@ from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.math import quat_apply
+from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_mul
 from isaaclab.utils.noise import UniformNoiseCfg
 
-from microtaur_common.robot_constants import LEG_JOINT_NAMES
+from microtaur_common.robot_constants import LEG_JOINT_NAMES, SPINE_JOINT_NAME, YAW_IMU2_QUAT_IN_REAR, YAW_REAR_BODY
 from microtaur_common.sim2real import Sim2RealStage
 from microtaur_common.task_params import COMMAND_NAME
 
-from .. import FOOT_BODY_NAMES, FOOT_OFFSET_IN_BODY_M
+from .. import FOOT_BODY_NAMES, foot_offsets_in_body
 from .contact import foot_contact_timers
 
 if TYPE_CHECKING:
@@ -97,6 +97,12 @@ def legs_cfg() -> SceneEntityCfg:
   return SceneEntityCfg(ROBOT, joint_names=list(LEG_JOINT_NAMES), preserve_order=True)
 
 
+def motors_cfg(variant: str = "rigid") -> SceneEntityCfg:
+  """All motors of the variant in canonical order: the 8 leg motors, + the spine last on the yaw robot."""
+  names = list(LEG_JOINT_NAMES) + ([SPINE_JOINT_NAME] if variant == "yaw" else [])
+  return SceneEntityCfg(ROBOT, joint_names=names, preserve_order=True)
+
+
 def feet_body_cfg() -> SceneEntityCfg:
   """The 4 foot bodies of the articulation, leg order 1..4."""
   return SceneEntityCfg(ROBOT, body_names=list(FOOT_BODY_NAMES), preserve_order=True)
@@ -125,11 +131,12 @@ def projected_gravity(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneE
 
 
 def encoder_bias(env: ManagerBasedRLEnv, num_joints: int) -> torch.Tensor:
-  """env.microtaur_encoder_bias [N, 8] (canonical order), zeros if absent."""
+  """env.microtaur_encoder_bias, first num_joints columns (canonical order: 8 legs, then the spine on the yaw
+  robot), zeros if absent."""
   bias = getattr(env, ENCODER_BIAS_ATTR, None)
   if bias is None:
     return torch.zeros(env.num_envs, num_joints, device=env.device)
-  return bias
+  return bias[:, :num_joints]
 
 
 def joint_pos(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, biased: bool = False) -> torch.Tensor:
@@ -150,10 +157,11 @@ def joint_vel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor
 
 def foot_centres_w(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
   """Foot sphere centres in world [N, 4, 3] from the foot body poses."""
-  d = env.scene[asset_cfg.name].data
+  robot = env.scene[asset_cfg.name]
+  d = robot.data
   pos = d.body_link_pos_w[:, asset_cfg.body_ids]
   quat = d.body_link_quat_w[:, asset_cfg.body_ids]
-  offset = torch.tensor(FOOT_OFFSET_IN_BODY_M, device=pos.device, dtype=pos.dtype).expand_as(pos)
+  offset = torch.tensor(foot_offsets_in_body(robot.joint_names), device=pos.device, dtype=pos.dtype).expand_as(pos)
   return pos + quat_apply(quat.reshape(-1, 4), offset.reshape(-1, 3)).reshape(pos.shape)
 
 
@@ -208,23 +216,51 @@ def foot_contact_forces(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> t
   return torch.sign(f) * torch.log1p(torch.abs(f))
 
 
-_KIN = None
-
 
 def foot_fk(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, biased: bool = True) -> torch.Tensor:
   """Five-bar forward kinematics of each leg from its two (encoder-biased) motor angles: foot
   (x, z) in the leg plane, metres, [N, 8] = (x1, z1, ..., x4, z4). The hardware computes the same
   closed form (microtaur_common.kinematics.forward_torch) from its encoders."""
-  global _KIN
-  if _KIN is None:
-    from microtaur_common.kinematics import MicrotaurFiveBarKinematics
-    _KIN = MicrotaurFiveBarKinematics()
-  d = env.scene[asset_cfg.name].data
+  from microtaur_common.kinematics import five_bar_for
+
+  robot = env.scene[asset_cfg.name]
+  d = robot.data
   q = d.joint_pos[:, asset_cfg.joint_ids]
   if biased:
     q = q + encoder_bias(env, q.shape[1])
-  fx, fz = _KIN.forward_torch(q[:, 0::2], q[:, 1::2])
+  fx, fz = five_bar_for(SPINE_JOINT_NAME in robot.joint_names).forward_torch(q[:, 0::2], q[:, 1::2])
   return torch.stack((fx, fz), dim=-1).reshape(q.shape[0], 8)
+
+
+def _imu2_frame(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg):
+  """(orientation, angular velocity in world) of the yaw robot's rear IMU: rear body x the site's rotation."""
+  robot = env.scene[asset_cfg.name]
+  bid = robot.body_names.index(YAW_REAR_BODY)
+  q_body = robot.data.body_link_quat_w[:, bid]
+  q_site = torch.tensor(YAW_IMU2_QUAT_IN_REAR, device=q_body.device, dtype=q_body.dtype).expand_as(q_body)
+  return quat_mul(q_body, q_site), robot.data.body_link_ang_vel_w[:, bid]
+
+
+def imu2_projected_gravity(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  """Unit gravity direction in the rear IMU's frame (yaw robot), ~(0, 0, -1) level at spine 0."""
+  q, _ = _imu2_frame(env, asset_cfg)
+  g = torch.tensor((0.0, 0.0, -1.0), device=q.device, dtype=q.dtype).expand(q.shape[0], 3)
+  return quat_apply_inverse(q, g)
+
+
+def imu2_ang_vel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg(ROBOT)) -> torch.Tensor:
+  """Rear IMU gyro (yaw robot): the rear body's angular velocity in the IMU frame, rad/s."""
+  q, w = _imu2_frame(env, asset_cfg)
+  return quat_apply_inverse(q, w)
+
+
+def leg_polar(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, biased: bool = False) -> torch.Tensor:
+  """Virtual leg per leg from the five-bar FK: (r, theta) x 4 = [N, 8]; r = |(x, z)| from the midpoint of
+  the two motor pivots (m), theta = atan2(x, -z) (rad, 0 = straight down, + = foot ahead). Stand: r 73.65 mm,
+  theta -3.9 deg (scripts/isaac_check_fk_ik.py)."""
+  fk = foot_fk(env, asset_cfg, biased=biased).reshape(-1, 4, 2)
+  x, z = fk[..., 0], fk[..., 1]
+  return torch.stack((torch.hypot(x, z), torch.atan2(x, -z)), dim=-1).reshape(-1, 8)
 
 
 def zeros_obs(env: ManagerBasedRLEnv, dim: int) -> torch.Tensor:
@@ -395,15 +431,42 @@ OBS_CLIP = 100.0  # far above any normal value (joint speed <= 32 rad/s, log for
 
 
 def make_observations_cfg(
-  stage: Sim2RealStage, rough: bool = False, teacher: bool = False, play: bool = False, student: bool = False
+  stage: Sim2RealStage, rough: bool = False, teacher: bool = False, play: bool = False, student: bool = False,
+  variant: str = "rigid", leg_polar_obs: bool = False,
 ) -> MicrotaurObservationsCfg:
   """Observation groups policy (actor), critic and optionally teacher.
-  play disables actor noise, as mjlab's play config."""
+  play disables actor noise, as mjlab's play config.
+  variant "yaw": joint terms cover the 9 motors (spine last) and the student's rear-IMU slot reads IMU 2.
+  leg_polar_obs: append the leg-plane foot point (x, z) x 4 (foot_fk) and the virtual leg (r, theta) x 4
+  to the critic and teacher (true angles), and the virtual leg to the student (encoder-biased angles; it
+  has foot_fk already). With the defaults the groups are exactly the rigid ones."""
   cfg = MicrotaurObservationsCfg(policy=actor_obs_cfg(stage), critic=critic_obs_cfg(rough))
   if teacher:
     cfg.teacher = teacher_obs_cfg(height_scan=True, stage=None if play else stage)
   if student:
     cfg.student = student_obs_cfg(stage)
+  if variant == "yaw":
+    for g in (cfg.policy, cfg.critic, cfg.teacher, cfg.student):
+      if g is None:
+        continue
+      for name in ("joint_pos", "joint_vel"):
+        t = getattr(g, name)
+        t.params = {**t.params, "asset_cfg": motors_cfg("yaw")}
+    if cfg.student is not None:
+      cfg.student.imu2_projected_gravity = ObsTerm(func=imu2_projected_gravity, noise=cfg.student.projected_gravity.noise)
+      cfg.student.imu2_base_ang_vel = ObsTerm(func=imu2_ang_vel, noise=cfg.student.base_ang_vel.noise)
+  elif variant != "rigid":
+    raise ValueError(f"unknown robot variant {variant!r}")
+  if leg_polar_obs:
+    for g, biased in ((cfg.critic, False), (cfg.teacher, False), (cfg.student, True)):
+      if g is None:
+        continue
+      if not biased:
+        g.foot_fk = ObsTerm(func=foot_fk, params={"asset_cfg": legs_cfg(), "biased": False})
+      term = ObsTerm(func=leg_polar, params={"asset_cfg": legs_cfg(), "biased": biased})
+      if biased and stage is not None:  # joint-angle noise -> r via the lever, theta directly
+        term.noise = UniformNoiseCfg(n_min=-stage.joint_pos_noise * FK_NOISE_LEVER_M, n_max=stage.joint_pos_noise * FK_NOISE_LEVER_M)
+      g.leg_polar = term
   if play:
     cfg.policy.enable_corruption = False
     for g in (cfg.teacher, cfg.student):
@@ -415,9 +478,9 @@ def make_observations_cfg(
     if group is not None:
       for term in group_terms(group).values():
         term.clip = (-OBS_CLIP, OBS_CLIP)
-  if cfg.student is not None and tuple(group_terms(cfg.student)) != STUDENT_TERMS:
+  if cfg.student is not None and tuple(group_terms(cfg.student)) != STUDENT_TERMS + (("leg_polar",) if leg_polar_obs else ()):
     raise RuntimeError(f"Student observation layout changed: {tuple(group_terms(cfg.student))}")
-  validate_observation_contract(cfg, rough=rough)
+  validate_observation_contract(cfg, rough=rough, leg_polar_obs=leg_polar_obs)
   return cfg
 
 
@@ -436,12 +499,12 @@ def group_terms(group) -> dict[str, ObsTerm]:
 
 
 def validate_observation_contract(
-  obs_cfg, rough: bool, actor_group: str = ACTOR_GROUP, critic_group: str = CRITIC_GROUP
+  obs_cfg, rough: bool, actor_group: str = ACTOR_GROUP, critic_group: str = CRITIC_GROUP, leg_polar_obs: bool = False
 ) -> None:
   get = (lambda k: obs_cfg[k]) if isinstance(obs_cfg, dict) else (lambda k: getattr(obs_cfg, k))
   actor = group_terms(get(actor_group))
   critic = group_terms(get(critic_group))
-  expected_critic = CRITIC_TERMS[:7] + (("height_scan",) if rough else ()) + CRITIC_TERMS[7:]
+  expected_critic = CRITIC_TERMS[:7] + (("height_scan",) if rough else ()) + CRITIC_TERMS[7:] + (("foot_fk", "leg_polar") if leg_polar_obs else ())
   if tuple(actor) != ACTOR_TERMS:
     raise RuntimeError(f"Actor observation contract changed: expected {ACTOR_TERMS}, got {tuple(actor)}")
   if tuple(critic) != expected_critic:
@@ -453,8 +516,9 @@ def validate_observation_contract(
   for name in ("joint_pos", "joint_vel"):
     for group_name, group in ((actor_group, actor), (critic_group, critic)):
       ac = group[name].params.get("asset_cfg")
-      if ac is None or tuple(ac.joint_names or ()) != LEG_JOINT_NAMES or not ac.preserve_order:
-        raise RuntimeError(f"{group_name}/{name} must select LEG_JOINT_NAMES in canonical order")
+      names = tuple(ac.joint_names or ()) if ac is not None else ()
+      if ac is None or names not in (LEG_JOINT_NAMES, LEG_JOINT_NAMES + (SPINE_JOINT_NAME,)) or not ac.preserve_order:
+        raise RuntimeError(f"{group_name}/{name} must select LEG_JOINT_NAMES (+ the spine) in canonical order")
   leaked = SIM_ONLY_TERMS.intersection(actor)
   if leaked:
     raise RuntimeError(f"Simulator-only observations in the actor: {sorted(leaked)}")

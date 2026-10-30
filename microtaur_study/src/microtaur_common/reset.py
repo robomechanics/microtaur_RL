@@ -39,7 +39,16 @@ def uniform(count: int, tail: tuple[int, ...], bounds: tuple[float, float], devi
   return lo + (hi - lo) * torch.rand((count, *tail), device=device, dtype=dtype)
 
 
-def sample_reset(n: int, randomize: bool, motor_limits: torch.Tensor, device, dtype) -> dict[str, torch.Tensor]:
+def _nominal(kin: MicrotaurFiveBarKinematics) -> tuple[np.ndarray, np.ndarray]:
+  """(foot xz [4, 2], full q [4, 4]) of the stand pose with these leg kinematics."""
+  if kin is KIN:
+    return NOMINAL_FOOT_XZ, NOMINAL_FULL_Q
+  sol = [kin.forward_numpy(STAND_A[i], STAND_E[i], leg_index=i + 1) for i in range(4)]
+  return np.stack([s.foot for s in sol]), np.stack([s.full for s in sol])
+
+
+def sample_reset(n: int, randomize: bool, motor_limits: torch.Tensor, device, dtype, hip_z=None,
+                 kin: MicrotaurFiveBarKinematics | None = None) -> dict[str, torch.Tensor]:
   """Sample n reset states.
 
   motor_limits: [n, 4, 2, 2] (leg, motor a/e, lower/upper), canonical order.
@@ -47,8 +56,11 @@ def sample_reset(n: int, randomize: bool, motor_limits: torch.Tensor, device, dt
   leg), motor_q [n, 8] in LEG_JOINT_NAMES order, root_height [n] above the
   ground, root_xy [n, 2] offset from the env origin, yaw [n], valid [n, 4].
   The torch.rand call order is the upstream one (kept for bit-exact tests).
+  kin: the legs' kinematics (default: the rigid robot's; the yaw robot passes kinematics.five_bar_for(True)).
   """
-  nominal = torch.tensor(NOMINAL_FOOT_XZ, device=device, dtype=dtype)[None].repeat(n, 1, 1)
+  kin = KIN if kin is None else kin
+  nominal_xz, nominal_full = _nominal(kin)
+  nominal = torch.tensor(nominal_xz, device=device, dtype=dtype)[None].repeat(n, 1, 1)
   reference = torch.stack(
     (torch.tensor(STAND_A, device=device, dtype=dtype), torch.tensor(STAND_E, device=device, dtype=dtype)), dim=-1
   )[None].repeat(n, 1, 1)
@@ -61,13 +73,15 @@ def sample_reset(n: int, randomize: bool, motor_limits: torch.Tensor, device, dt
     per_leg -= per_leg.mean(dim=1, keepdim=True)
     targets[:, :, 1] += shared + per_leg
 
-  full_q, valid = KIN.solve_all_legs_torch(targets, reference, motor_limits=motor_limits)
+  full_q, valid = kin.solve_all_legs_torch(targets, reference, motor_limits=motor_limits)
   full_q = full_q.reshape(n, 4, 4)
   # Fall back to the nominal closed-chain state on IK / joint-limit edge cases.
-  full_q = torch.where(valid[:, :, None], full_q, torch.tensor(NOMINAL_FULL_Q, device=device, dtype=dtype)[None])
+  full_q = torch.where(valid[:, :, None], full_q, torch.tensor(nominal_full, device=device, dtype=dtype)[None])
   targets = torch.where(valid[:, :, None], targets, nominal)
 
-  hip_z = torch.tensor(HIP_MIDPOINTS_ROOT_M[:, 2], device=device, dtype=dtype)[None]
+  # hip_z: leg-plane origin heights in the root frame, legs 1..4 (default: the rigid robot's; the yaw robot
+  # passes robot_constants.YAW_HIP_Z_ROOT_M)
+  hip_z = torch.tensor(HIP_MIDPOINTS_ROOT_M[:, 2] if hip_z is None else hip_z, device=device, dtype=dtype)[None]
   if randomize:
     lowest = uniform(n, (), RESET_LOWEST_FOOT_Z_M, device, dtype)
   else:

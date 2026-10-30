@@ -43,10 +43,10 @@ from isaaclab.envs import ManagerBasedRLEnv  # noqa: E402
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper  # noqa: E402
 
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
-from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg  # noqa: E402
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_kwargs  # noqa: E402
 
 LEVELS = [0, 3, 0, 2, 4, 6, 7, 0, 3, 6]  # per env / column
-cfg = MicrotaurTeacherCurPlayEnvCfg()
+cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = 10
 if args.no_rails:
   g = cfg.scene.terrain.terrain_generator

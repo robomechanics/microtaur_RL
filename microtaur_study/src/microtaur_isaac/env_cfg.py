@@ -25,6 +25,8 @@ from isaaclab.utils import configclass
 from microtaur_common.sim2real import PUSH_FLAT_SCALE, PUSH_INTERVAL_S, PUSH_VELOCITY_RANGE, STAGES
 from microtaur_common.task_params import EPISODE_S, POLICY_DT_S
 
+from microtaur_common.robot_constants import SPINE_JOINT_NAME
+
 from . import ROOT_BODY_NAME
 from .mdp import commands as C
 from .mdp import events as E
@@ -32,7 +34,7 @@ from .mdp import observations as O
 from .mdp import rewards as R
 from .mdp import terminations as T
 from .mdp.actions import MicrotaurWalkActionCfg
-from .robot import MICROTAUR_RIGID_CFG, VISUAL_USD_PATH
+from .robot import MICROTAUR_RIGID_CFG, MICROTAUR_YAW_CFG, VISUAL_USD_PATH, YAW_VISUAL_USD_PATH
 
 PHYSICS_DT_S = 0.0025
 DECIMATION = round(POLICY_DT_S / PHYSICS_DT_S)  # 14
@@ -196,9 +198,9 @@ def _contact_sensor() -> ContactSensorCfg:
                           force_threshold=O.CONTACT_FORCE_THRESHOLD_N)
 
 
-def _height_scanner(resolution: float, size: tuple[float, float]) -> RayCasterCfg:
+def _height_scanner(resolution: float, size: tuple[float, float], root_body: str = ROOT_BODY_NAME) -> RayCasterCfg:
   return RayCasterCfg(
-    prim_path="{ENV_REGEX_NS}/Robot/" + ROOT_BODY_NAME,
+    prim_path="{ENV_REGEX_NS}/Robot/" + root_body,
     offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.2)),
     ray_alignment="yaw",
     pattern_cfg=patterns.GridPatternCfg(resolution=resolution, size=list(size)),
@@ -227,19 +229,20 @@ class MicrotaurSceneCfg(InteractiveSceneCfg):
 # -----------------------------------------------------------------------------
 
 
-def _events(stage, play: bool, rough: bool) -> dict[str, EventTermCfg]:
+def _events(stage, play: bool, rough: bool, root_body: str = ROOT_BODY_NAME, num_motors: int = 8) -> dict[str, EventTermCfg]:
   ev = {
     "terrain_flags": EventTermCfg(func=terrain_flags, mode="startup"),
     "ik_consistent_reset": EventTermCfg(func=E.ik_consistent_reset, mode="reset",
                                         params={"randomize": not play, "spawn_fn": terrain_spawn}),
   }
   if not play:
-    ev["encoder_bias"] = EventTermCfg(func=E.encoder_bias, mode="startup", params={"bias_rad": stage.encoder_bias_rad})
+    ev["encoder_bias"] = EventTermCfg(func=E.encoder_bias, mode="startup",
+                                      params={"bias_rad": stage.encoder_bias_rad, "num_motors": num_motors})
     if stage.root_com_xy_m is not None:
       xy, z = stage.root_com_xy_m, stage.root_com_z_m
       ev["base_com"] = EventTermCfg(
         func=il_mdp.randomize_rigid_body_com, mode="startup",
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=ROOT_BODY_NAME),
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=root_body),
                 "com_range": {"x": (-xy, xy), "y": (-xy, xy), "z": (-z, z)}},
       )
     if rough or stage.push:
@@ -261,6 +264,9 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
   cur_terrain: bool = False  # rough only: 7-level railed-C terrain + run-out row, commanded-distance curriculum
   c_reverse_frac: float = 0.0  # fraction of C spawns walking the lane in -x (raised side on the robot's right)
   student_obs: bool = False  # add the 47-D deployable "student" group (2 IMUs, FK) for distillation
+  variant: str = "rigid"  # "rigid" or "yaw" (active-yaw spine: 9 motors, two trunk halves, IMU 2 real)
+  leg_polar_obs: bool = False  # add foot (x, z) + virtual leg (r, theta) x 4 to critic / teacher, (r, theta) to the student
+  energy_target: float | None = None  # final motor_energy weight of the ramp (negative); None = WEIGHTS (0)
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=2048, env_spacing=0.5)
 
   def __post_init__(self):
@@ -271,6 +277,11 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.sim.render_interval = DECIMATION
     self.sim.physics_material = self.scene.terrain.physics_material
     self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
+    yaw = self.variant == "yaw"
+    if yaw:
+      from microtaur_common.robot_constants import YAW_ROOT_BODY
+      self.scene.robot = MICROTAUR_YAW_CFG
+    root_body = YAW_ROOT_BODY if yaw else ROOT_BODY_NAME
 
     if self.rough:
       from . import terrains as TR
@@ -284,22 +295,24 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
       self.scene.terrain.max_init_terrain_level = 0
     if self.rough or self.teacher:
       # 12 x 9 = 108 values at 35 mm (two samples per 70 mm cell) for the teacher.
-      self.scene.height_scanner = _height_scanner(0.035, (0.385, 0.28)) if self.teacher else \
-        _height_scanner(0.05, (0.40, 0.30))
+      self.scene.height_scanner = _height_scanner(0.035, (0.385, 0.28), root_body) if self.teacher else \
+        _height_scanner(0.05, (0.40, 0.30), root_body)
 
     self.observations = O.make_observations_cfg(s2r, rough=self.rough and not self.teacher,
-                                                teacher=self.teacher, play=self.play, student=self.student_obs)
+                                                teacher=self.teacher, play=self.play, student=self.student_obs,
+                                                variant=self.variant, leg_polar_obs=self.leg_polar_obs)
     self.actions = _Actions()
     self.actions.joint_pos = MicrotaurWalkActionCfg(
       target_gain_range=(1.0, 1.0) if self.play else s2r.action_gain_range,
       target_bias_rad=0.0 if self.play else s2r.action_bias_rad,
+      spine_joint_name=SPINE_JOINT_NAME if yaw else None,
     )
     self.commands = _Commands()
     self.commands.twist = C.make_twist_command_cfg(play=self.play)
-    self.rewards = R.make_rewards_cfg()
-    self.terminations = T.make_terminations_cfg()
+    self.rewards = R.make_rewards_cfg(self.variant)
+    self.terminations = T.make_terminations_cfg(self.variant)
     self.events = _Events()
-    for k, v in _events(s2r, self.play, self.rough).items():
+    for k, v in _events(s2r, self.play, self.rough, root_body=root_body, num_motors=9 if yaw else 8).items():
       setattr(self.events, k, v)
     if self.rough:
       # (-1, -1) = off; set with env.events.init_terrain_levels.params.level_range=[lo,hi]
@@ -307,7 +320,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
                                                      params={"level_range": (-1, -1)})
     self.curriculum = _Curriculum()
     self.curriculum.command_ranges = C.make_command_curriculum_term(play=self.play)
-    self.curriculum.energy_weight = R.make_energy_curriculum_term()
+    self.curriculum.energy_weight = R.make_energy_curriculum_term(self.energy_target)
     if self.rough:
       self.curriculum.terrain_levels = (
         CurriculumTermCfg(func=terrain_levels_progress, params={"steps_per_level": 300 * 32, "min_level": 0})
@@ -320,7 +333,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
         self.scene.terrain.max_init_terrain_level = None
         self.curriculum.terrain_levels = None
       self.scene.robot = self.scene.robot.replace(
-        spawn=self.scene.robot.spawn.replace(usd_path=str(VISUAL_USD_PATH)))
+        spawn=self.scene.robot.spawn.replace(usd_path=str(YAW_VISUAL_USD_PATH if yaw else VISUAL_USD_PATH)))
       # GUI camera follows env 0's robot from the front-left side.
       self.viewer.origin_type = "asset_root"
       self.viewer.asset_name = "robot"
@@ -449,4 +462,36 @@ class MicrotaurTeacherCurStudentEnvCfg(MicrotaurTeacherCurEnvCfg):
 
 @configclass
 class MicrotaurTeacherCurStudentPlayEnvCfg(MicrotaurTeacherCurPlayEnvCfg):
+  student_obs: bool = True
+
+
+# ---------------------------------------------------------------- active-yaw robot (spine motor, 2 trunk halves)
+@configclass
+class MicrotaurYawTeacherCurEnvCfg(MicrotaurTeacherCurEnvCfg):
+  """Teacher-Cur on the active-yaw Microtaur: 8 leg motors + the spine yaw motor (9 actions),
+  front half = root (IMU 1), rear half carries IMU 2; motor energy counted on all 9 motors
+  (copper loss 159 W/(N m)^2 on the XL330-M077 legs, 27 on the M288 spine), ramped to -0.005 from
+  iteration 200 to 500 (the smallest weight of the 09-25 sweep that kept walking). Observations carry the
+  leg-plane foot point and the virtual leg (r, theta) of every leg (leg_polar_obs)."""
+  variant: str = "yaw"
+  energy_target: float | None = -0.005
+  leg_polar_obs: bool = True
+
+
+@configclass
+class MicrotaurYawTeacherCurPlayEnvCfg(MicrotaurTeacherCurPlayEnvCfg):
+  variant: str = "yaw"
+  energy_target: float | None = -0.005
+  leg_polar_obs: bool = True
+
+
+@configclass
+class MicrotaurYawTeacherCurStudentEnvCfg(MicrotaurYawTeacherCurEnvCfg):
+  """Yaw Teacher-Cur + the 58-D student group (both IMUs real, 9 motor angles / velocities, foot FK,
+  last 9 actions, command, virtual legs)."""
+  student_obs: bool = True
+
+
+@configclass
+class MicrotaurYawTeacherCurStudentPlayEnvCfg(MicrotaurYawTeacherCurPlayEnvCfg):
   student_obs: bool = True

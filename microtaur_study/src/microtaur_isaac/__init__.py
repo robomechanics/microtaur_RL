@@ -50,6 +50,22 @@ FOOT_OFFSET_IN_BODY_M = (
   (0.08273, 0.006242, -0.0015),
   (0.08273, -0.006242, -0.0015),
 )
+# Active-yaw robot (assets/active_yaw_microtaur/robot_2imu.xml): same foot body names, but the lower-link
+# CAD frames differ, so the foot sphere sits elsewhere in its body (MJCF leg{k}_foot_site).
+YAW_FOOT_OFFSET_IN_BODY_M = (
+  (-0.01860744, -0.0808511886, -0.0015),
+  (0.0825952176, 0.00782186238, -0.0015),
+  (-0.01860744, 0.0808511886, -0.0015),
+  (-0.01860744, -0.0808511886, -0.0015),
+)
+
+
+def foot_offsets_in_body(joint_names) -> tuple:
+  """FOOT_OFFSET_IN_BODY_M of the robot with these joints (the yaw robot has the spine joint)."""
+  from microtaur_common.robot_constants import SPINE_JOINT_NAME
+  return YAW_FOOT_OFFSET_IN_BODY_M if SPINE_JOINT_NAME in joint_names else FOOT_OFFSET_IN_BODY_M
+
+
 ROOT_BODY_NAME = "battery"
 TERRAIN_TYPES = ("A_flat", "B_blocks", "C_step")
 
@@ -65,6 +81,9 @@ for _name, _cfg in (
   ("Teacher-Hard2x", "MicrotaurTeacherHard2xEnvCfg"), ("Teacher-Hard2x-Play", "MicrotaurTeacherHard2xPlayEnvCfg"),
   ("Teacher-Cur", "MicrotaurTeacherCurEnvCfg"), ("Teacher-Cur-Play", "MicrotaurTeacherCurPlayEnvCfg"),
   ("Teacher-Cur-Student", "MicrotaurTeacherCurStudentEnvCfg"), ("Teacher-Cur-Student-Play", "MicrotaurTeacherCurStudentPlayEnvCfg"),
+  ("Yaw-Teacher-Cur", "MicrotaurYawTeacherCurEnvCfg"), ("Yaw-Teacher-Cur-Play", "MicrotaurYawTeacherCurPlayEnvCfg"),
+  ("Yaw-Teacher-Cur-Student", "MicrotaurYawTeacherCurStudentEnvCfg"),
+  ("Yaw-Teacher-Cur-Student-Play", "MicrotaurYawTeacherCurStudentPlayEnvCfg"),
 ):
   gym.register(
     id=f"Microtaur-Isaac-{_name}-v0",
@@ -73,10 +92,10 @@ for _name, _cfg in (
     kwargs={
       "env_cfg_entry_point": f"microtaur_isaac.env_cfg:{_cfg}",
       "rsl_rl_cfg_entry_point": "microtaur_isaac.agents:"
-      + ("MicrotaurTeacherPPORunnerCfg" if _name.startswith("Teacher") else "MicrotaurPPORunnerCfg"),
+      + ("MicrotaurTeacherPPORunnerCfg" if "Teacher" in _name else "MicrotaurPPORunnerCfg"),
       # left/right symmetry augmentation: train.py --agent rsl_rl_sym_cfg_entry_point
       "rsl_rl_sym_cfg_entry_point": "microtaur_isaac.agents:"
-      + ("MicrotaurTeacherPPORunnerSymCfg" if _name.startswith("Teacher") else "MicrotaurPPORunnerSymCfg"),
+      + ("MicrotaurTeacherPPORunnerSymCfg" if "Teacher" in _name else "MicrotaurPPORunnerSymCfg"),
       # student distillation from a teacher checkpoint: --agent rsl_rl_student_{mlp,gru}_cfg_entry_point
       "rsl_rl_student_mlp_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentMLPRunnerCfg",
       "rsl_rl_student_gru_cfg_entry_point": "microtaur_isaac.agents:MicrotaurStudentGRURunnerCfg",

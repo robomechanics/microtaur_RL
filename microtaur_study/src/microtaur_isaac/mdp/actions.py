@@ -33,12 +33,20 @@ class MicrotaurWalkAction(ActionTerm):
     params = WalkActionParams(target_gain_range=tuple(cfg.target_gain_range), target_bias_rad=float(cfg.target_bias_rad),
                               action_scale_rad=float(cfg.action_scale_rad))
     self.core = WalkActionCore(params, self.num_envs, self.device)
-    self._raw = torch.zeros(self.num_envs, 8, device=self.device)
+    # Optional 9th action: the yaw robot's spine (target = clip(a) x spine_action_scale_rad, clamped to
+    # +-spine_limit_rad, held one policy step like the legs' targets).
+    self._spine = cfg.spine_joint_name is not None
+    if self._spine:
+      sid, _ = self._asset.find_joints([cfg.spine_joint_name])
+      self._spine_id = sid
+      self._spine_hold = torch.zeros(self.num_envs, 1, device=self.device)
+    n = 9 if self._spine else 8
+    self._raw = torch.zeros(self.num_envs, n, device=self.device)
     self._processed = torch.zeros_like(self._raw)
 
   @property
   def action_dim(self) -> int:
-    return 8
+    return 9 if self._spine else 8
 
   @property
   def raw_actions(self) -> torch.Tensor:
@@ -50,16 +58,29 @@ class MicrotaurWalkAction(ActionTerm):
 
   def process_actions(self, actions: torch.Tensor):
     d = self._asset.data
+    reset = self._walk_env.episode_length_buf <= 1
     raw, applied = self.core.step(
-      actions, d.joint_pos[:, self._joint_ids], d.joint_vel[:, self._joint_ids], self._walk_env.episode_length_buf <= 1
+      actions[:, :8], d.joint_pos[:, self._joint_ids], d.joint_vel[:, self._joint_ids], reset
     )
-    self._raw[:] = raw
-    self._processed[:] = applied
+    self._raw[:, :8] = raw
+    self._processed[:, :8] = applied
+    if self._spine:
+      a = torch.clamp(torch.nan_to_num(actions[:, 8:9], nan=0.0, posinf=1.0, neginf=-1.0), -1.0, 1.0)
+      lim = float(self.cfg.spine_limit_rad)
+      requested = torch.clamp(a * float(self.cfg.spine_action_scale_rad), -lim, lim)
+      # seed the hold from the actual reset pose, then apply the previous step's request (1-step latency)
+      self._spine_hold = torch.where(reset[:, None], d.joint_pos[:, self._spine_id], self._spine_hold)
+      self._processed[:, 8:9] = self._spine_hold
+      self._spine_hold = requested
+      self._raw[:, 8:9] = a
 
   def apply_actions(self):
     bias = getattr(self._walk_env, "microtaur_encoder_bias", None)
-    target = self._processed if bias is None else self._processed - bias
-    self._asset.set_joint_position_target(target, joint_ids=self._joint_ids)
+    legs = self._processed[:, :8] if bias is None else self._processed[:, :8] - bias[:, :8]
+    self._asset.set_joint_position_target(legs, joint_ids=self._joint_ids)
+    if self._spine:
+      spine = self._processed[:, 8:9] if bias is None or bias.shape[1] < 9 else self._processed[:, 8:9] - bias[:, 8:9]
+      self._asset.set_joint_position_target(spine, joint_ids=self._spine_id)
 
   def reset(self, env_ids=None) -> None:
     self._raw[env_ids] = 0.0
@@ -76,3 +97,7 @@ class MicrotaurWalkActionCfg(ActionTermCfg):
   # Motor offset from the stand pose at |action| = 1 (actions are clipped to +-1).
   # The hardware controller must use the same value as the policy was trained with.
   action_scale_rad: float = ACTION_SCALE_RAD
+  # Yaw robot: the spine joint as a 9th action (None: the rigid robot's 8 actions).
+  spine_joint_name: str | None = None
+  spine_action_scale_rad: float = 0.35  # |action| = 1 -> the joint's full +-0.35 rad range
+  spine_limit_rad: float = 0.33  # kept inside the 0.35 rad joint limit

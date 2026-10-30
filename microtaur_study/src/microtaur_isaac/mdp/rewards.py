@@ -66,7 +66,7 @@ from microtaur_common.task_params import (  # noqa: F401  (re-exported)
 
 from .contact import foot_contact_timers
 from .terminations import UNSTABLE_ANG_VEL_RAD_S, UNSTABLE_LIN_VEL_M_S, physics_unstable
-from .. import FOOT_OFFSET_IN_BODY_M
+from .. import foot_offsets_in_body
 from .observations import ROBOT, feet_body_cfg, feet_sensor_cfg, legs_cfg
 
 if TYPE_CHECKING:
@@ -97,10 +97,15 @@ def motor_power_w(
   env: ManagerBasedRLEnv, copper_w_per_nm2: float, asset_cfg: SceneEntityCfg
 ) -> tuple[torch.Tensor, torch.Tensor]:
   """Per-env (|mechanical|, copper) power in W summed over the asset_cfg joints
-  (the 8 motors). Torque = applied_torque (after the DC-motor clip)."""
+  (the 8 motors, + the spine on the yaw robot). Torque = applied_torque (after the DC-motor clip).
+  copper_w_per_nm2: one value for all joints, or one per joint (the yaw robot's spine is a different gearbox)."""
   d = env.scene[asset_cfg.name].data
   ids = asset_cfg.joint_ids
-  return RM.motor_power(_finite(d.applied_torque[:, ids]), _finite(d.joint_vel[:, ids]), copper_w_per_nm2)
+  tau, qd = _finite(d.applied_torque[:, ids]), _finite(d.joint_vel[:, ids])
+  if isinstance(copper_w_per_nm2, (int, float)):
+    return RM.motor_power(tau, qd, copper_w_per_nm2)
+  c = torch.as_tensor(copper_w_per_nm2, device=tau.device, dtype=tau.dtype)
+  return torch.sum(torch.abs(tau * qd), dim=1), torch.sum(c * torch.square(tau), dim=1)
 
 
 def motor_energy(
@@ -134,9 +139,10 @@ def feet_slide(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: Sc
   speed (m/s). Velocity of the foot sphere centre (body velocity + w x r, the foot is an
   offset point on leglink2), contact from the policy-step timers of mdp.contact."""
   contact, _, _ = foot_contact_timers(env, sensor_cfg)
-  d = env.scene[asset_cfg.name].data
+  robot = env.scene[asset_cfg.name]
+  d = robot.data
   quat = d.body_link_quat_w[:, asset_cfg.body_ids]
-  off = torch.tensor(FOOT_OFFSET_IN_BODY_M, device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
+  off = torch.tensor(foot_offsets_in_body(robot.joint_names), device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
   r = quat_apply(quat.reshape(-1, 4), off.reshape(-1, 3)).reshape(off.shape)
   v = _finite(d.body_link_lin_vel_w[:, asset_cfg.body_ids]) + torch.cross(_finite(d.body_link_ang_vel_w[:, asset_cfg.body_ids]), r, dim=-1)
   # a PhysX blow-up step (truncated by physics_unstable) can leave NaN poses: clean the result, clamp keeps NaN
@@ -294,8 +300,16 @@ class MicrotaurRewardsCfg:
   )
 
 
-def make_rewards_cfg() -> MicrotaurRewardsCfg:
-  return MicrotaurRewardsCfg()
+def make_rewards_cfg(variant: str = "rigid") -> MicrotaurRewardsCfg:
+  cfg = MicrotaurRewardsCfg()
+  if variant == "yaw":
+    from microtaur_common.robot_constants import SPINE_COPPER_W_PER_NM2, YAW_TOTAL_MASS_KG
+
+    from .observations import motors_cfg
+    copper = (XL330_COPPER_W_PER_NM2,) * 8 + (SPINE_COPPER_W_PER_NM2,)
+    cfg.motor_energy.params.update({"copper_w_per_nm2": copper, "mass_kg": YAW_TOTAL_MASS_KG, "asset_cfg": motors_cfg("yaw")})
+    cfg.metrics.params.update({"copper_w_per_nm2": copper, "asset_cfg": motors_cfg("yaw")})
+  return cfg
 
 
 def reward_weight_stages(env: ManagerBasedRLEnv, env_ids, reward_name: str, stages: Sequence[dict]) -> dict:

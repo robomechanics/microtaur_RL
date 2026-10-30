@@ -4,7 +4,7 @@ The kind of run is read from <checkpoint dir>/params/agent.yaml (runner / policy
 env.yaml (actor observation history), so every eval script handles teachers, MLP students
 and GRU students the same way:
 
-  cfg = MicrotaurTeacherCurPlayEnvCfg()
+  cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(checkpoint))   # robot variant / leg_polar obs
   prepare_env_cfg(cfg, checkpoint)          # before creating the env (history length)
   env = ManagerBasedRLEnv(cfg); w = RslRlVecEnvWrapper(env)
   act, reset = load_policy(w, checkpoint)
@@ -21,6 +21,21 @@ from pathlib import Path
 def _params(checkpoint: str, name: str) -> str:
   p = Path(checkpoint).parent / "params" / name
   return p.read_text() if p.exists() else ""
+
+
+def variant_kwargs(checkpoint: str) -> dict:
+  """Env cfg fields the run was trained with that change the robot or the observation layout
+  (variant "yaw", leg_polar_obs), from params/env.yaml; {} for runs from before these fields (rigid).
+  Pass them to the cfg constructor: MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(ckpt))."""
+  y = _params(checkpoint, "env.yaml")
+  kw = {}
+  m = re.search(r"^variant: (\w+)$", y, re.M)
+  if m:
+    kw["variant"] = m.group(1)
+  m = re.search(r"^leg_polar_obs: (true|false)$", y, re.M)
+  if m:
+    kw["leg_polar_obs"] = m.group(1) == "true"
+  return kw
 
 
 def is_student(checkpoint: str) -> bool:

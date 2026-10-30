@@ -18,11 +18,11 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from rsl_rl.runners import OnPolicyRunner
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg
-from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_kwargs
 from microtaur_isaac.mdp.contact import foot_contact_timers
 from microtaur_isaac.mdp.observations import feet_sensor_cfg
 N = 192 if args.device.startswith("cuda") else 48
-cfg = MicrotaurTeacherCurPlayEnvCfg(); cfg.scene.num_envs = N; cfg.sim.device = args.device
+cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.ckpts[0].split('=', 1)[1])); cfg.scene.num_envs = N; cfg.sim.device = args.device
 cfg.curriculum.command_ranges = None; cfg.commands.twist.resampling_time_range = (1e9, 1e9)
 rw = cfg.rewards
 T1 = {"action_rate": -0.08, "trot_gait": 1.0, "feet_air_time": 1.0, "flat_orientation_l2": -10.0, "ang_vel_xy_l2": -0.05,

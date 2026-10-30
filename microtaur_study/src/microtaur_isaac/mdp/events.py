@@ -6,9 +6,11 @@ import torch
 from isaaclab.assets import Articulation
 from isaaclab.utils.math import quat_from_euler_xyz
 
-from microtaur_common.kinematics import FULL_JOINT_NAMES
+from microtaur_common.kinematics import FULL_JOINT_NAMES, five_bar_for
 from microtaur_common.reset import sample_reset
-from microtaur_common.robot_constants import LEG_JOINT_NAMES
+from microtaur_common.robot_constants import LEG_JOINT_NAMES, SPINE_JOINT_NAME, YAW_HIP_Z_ROOT_M
+
+SPINE_RESET_RAD = 0.05  # randomised spine angle at reset, U(-x, x) (yaw robot)
 
 
 def _ids(env, env_ids) -> torch.Tensor:
@@ -17,16 +19,16 @@ def _ids(env, env_ids) -> torch.Tensor:
   return env_ids.to(env.device, dtype=torch.long)
 
 
-def encoder_bias(env, env_ids, bias_rad: float) -> None:
+def encoder_bias(env, env_ids, bias_rad: float, num_motors: int = 8) -> None:
   """Startup: per-env motor encoder zero error, U(-bias, bias), canonical order.
 
-  Stored as env.microtaur_encoder_bias [N, 8]; the actor's joint_pos adds it and
-  the action term subtracts it from the target (the mjlab convention).
+  Stored as env.microtaur_encoder_bias [N, num_motors] (8 legs, + the spine last on the yaw robot);
+  the actor's joint_pos adds it and the action term subtracts it from the target (the mjlab convention).
   """
   if not hasattr(env, "microtaur_encoder_bias"):
-    env.microtaur_encoder_bias = torch.zeros(env.num_envs, 8, device=env.device)
+    env.microtaur_encoder_bias = torch.zeros(env.num_envs, num_motors, device=env.device)
   ids = _ids(env, env_ids)
-  env.microtaur_encoder_bias[ids] = (2.0 * torch.rand(len(ids), 8, device=env.device) - 1.0) * bias_rad
+  env.microtaur_encoder_bias[ids] = (2.0 * torch.rand(len(ids), num_motors, device=env.device) - 1.0) * bias_rad
 
 
 def ik_consistent_reset(env, env_ids, randomize: bool, spawn_fn=None) -> None:
@@ -46,7 +48,9 @@ def ik_consistent_reset(env, env_ids, randomize: bool, spawn_fn=None) -> None:
   motor_ids, _ = robot.find_joints(list(LEG_JOINT_NAMES), preserve_order=True)
   full_ids, _ = robot.find_joints(list(FULL_JOINT_NAMES), preserve_order=True)
   limits = robot.data.joint_pos_limits[ids][:, motor_ids, :].reshape(n, 4, 2, 2)
-  r = sample_reset(n, randomize, limits, dev, dt)
+  yaw_robot = SPINE_JOINT_NAME in robot.joint_names
+  r = sample_reset(n, randomize, limits, dev, dt, hip_z=YAW_HIP_Z_ROOT_M if yaw_robot else None,
+                   kin=five_bar_for(True) if yaw_robot else None)
 
   xy, yaw = r["root_xy"], r["yaw"]
   ground = torch.zeros_like(yaw)
@@ -73,3 +77,8 @@ def ik_consistent_reset(env, env_ids, randomize: bool, spawn_fn=None) -> None:
   # Seed motor targets from the reset pose so the first delayed command does
   # not pull the mechanism away.
   robot.set_joint_position_target(r["motor_q"], joint_ids=motor_ids, env_ids=ids)
+  if yaw_robot:
+    spine_ids, _ = robot.find_joints([SPINE_JOINT_NAME])
+    q_s = (2.0 * torch.rand(n, 1, device=dev, dtype=dt) - 1.0) * SPINE_RESET_RAD if randomize else torch.zeros(n, 1, device=dev, dtype=dt)
+    robot.write_joint_state_to_sim(q_s, torch.zeros_like(q_s), joint_ids=spine_ids, env_ids=ids)
+    robot.set_joint_position_target(q_s, joint_ids=spine_ids, env_ids=ids)

@@ -135,5 +135,14 @@ class MicrotaurTerminationsCfg:
   )
 
 
-def make_terminations_cfg() -> MicrotaurTerminationsCfg:
-  return MicrotaurTerminationsCfg()
+def make_terminations_cfg(variant: str = "rigid") -> MicrotaurTerminationsCfg:
+  cfg = MicrotaurTerminationsCfg()
+  if variant == "yaw":
+    from microtaur_common.robot_constants import YAW_REAR_BODY, YAW_ROOT_BODY
+    from microtaur_common.reset import NOMINAL_ROOT_HEIGHT_M
+
+    from ..robot import YAW_NOMINAL_ROOT_HEIGHT_M
+    # both trunk halves; root height limit with the same 18 mm margin below the variant's stand height
+    cfg.illegal_contact.params["sensor_cfg"] = SceneEntityCfg(CONTACT_SENSOR, body_names=[YAW_ROOT_BODY, YAW_REAR_BODY])
+    cfg.base_too_low.params["min_height_m"] = YAW_NOMINAL_ROOT_HEIGHT_M - (NOMINAL_ROOT_HEIGHT_M - MIN_ROOT_HEIGHT_M)
+  return cfg

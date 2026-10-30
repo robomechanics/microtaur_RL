@@ -41,20 +41,20 @@ from isaaclab.utils.math import quat_apply_inverse  # noqa: E402
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper  # noqa: E402
 from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 
-from microtaur_common.kinematics import MicrotaurFiveBarKinematics  # noqa: E402
+from microtaur_common.kinematics import five_bar_for  # noqa: E402
 from microtaur_common.robot_constants import LEG_JOINT_NAMES  # noqa: E402
 from microtaur_isaac import FOOT_BODY_NAMES  # noqa: E402
 from microtaur_isaac import terrains as TR  # noqa: E402
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
-from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg  # noqa: E402
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_kwargs  # noqa: E402
 from microtaur_isaac.mdp.contact import foot_contact_timers  # noqa: E402
 from microtaur_isaac.mdp.observations import feet_sensor_cfg  # noqa: E402
 
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 N = 60  # 6 per column -> C columns 7-9 = envs 42..59
-cfg = MicrotaurTeacherCurPlayEnvCfg()
+cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = N
 cfg.sim.device = args.device
 cfg.c_reverse_frac = 1.0 if args.reverse else 0.0
@@ -95,7 +95,7 @@ with torch.inference_mode():
     rec["fy"].append(fy.cpu().numpy())
     rec["done"].append(dones.cpu().numpy())
 R = {k: np.stack(v) for k, v in rec.items()}
-KIN = MicrotaurFiveBarKinematics()
+KIN = five_bar_for(cfg.variant == "yaw")
 x0, x1 = TR.C_STEP_X_RANGE
 res = {}
 lines = [f"checkpoint {args.checkpoint}", f"C lane, straight {args.speed} m/s, {args.steps} steps; on-step = root x inside [{x0 + 0.15:.2f}, {x1:.2f}] m",
