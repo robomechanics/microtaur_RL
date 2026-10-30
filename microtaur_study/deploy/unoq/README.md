@@ -99,14 +99,15 @@ The filter uses the measured q and qd from the same step.
 Training covered vx 0.10–0.35 m/s and yaw rate −0.25…+0.25 rad/s, with vy always 0. Stay inside these ranges; there is no standing or walking-backwards command.
 
 ## What to expect (simulation only)
-- **Gait:** diagonal trot at about 7 Hz, no flight phase, body bob about 3 mm.
-- **Speed:** the robot walks faster than slow commands: 0.17 m/s at 0.10, 0.24 at 0.20, 0.33 at 0.35.
-- **Flat ground:** no falls. Heading drifts over time; on flat ground the drift is about 10–30° per 20 s.
-- **Random blocks up to ±2 cm:** 3% falls at the hardest level; slows to 0.13 m/s.
-- **Side step (one side raised 18–37 mm):** no falls, 0.13–0.20 m/s. The legs on the raised side shorten by about 29 mm on a 37 mm step, keeping the body within about 4° of level.
+Numbers for the policy in this bundle (see `SOURCE.txt`), straight walking at 0.20 m/s for 20 s unless stated.
+- **Gait:** diagonal trot at about 4.8 Hz, no flight phase, body bob about 4 mm.
+- **Speed:** the robot walks a little faster than slow commands: 0.17 m/s at 0.10, 0.26 at 0.20, 0.35 at 0.35.
+- **Flat ground:** no falls; heading drifts about 3–5° per 20 s.
+- **Random blocks (up to about +22 / −15 mm):** no falls up to the second-hardest level; 1 fall in 20 runs at the hardest-but-one; slows to 0.16–0.18 m/s.
+- **Side step (one side raised up to 37 mm):** no falls at any height, 0.18–0.25 m/s. The legs on the raised side shorten by about 31 mm on the 37 mm step, keeping the body within about 2.5° of level.
 
 ## Not validated / known gaps
-- **The servo model is not identified.** The simulator models the XL330 as a compliant position servo (P gain 1, torque cap 0.129 N·m, velocity limit 32 rad/s). These are datasheet-based values; the real step response is the biggest sim-to-real unknown.
+- **Servo settings must match training.** The simulator models the XL330 as a compliant position servo with P gain 1 N·m/rad, **D gain 0.0092 N·m·s/rad**, friction 0.028 N·m and a torque cap of 0.129 N·m (0.60 × stall), fitted to step responses measured on the robot (`docs/ACTUATOR_SYSID_2026-10-28.md`). That D gain is the firmware's **`Position D Gain` = 200** (the App Lab firmware's `POSITION_D_GAIN_LEG = 200`). With D = 0 in the servos the real legs are less damped than in training (43.7% overshoot measured at D = 200). Keep the firmware at D = 200, or tell us and we retrain with KD = 0.
 - **The policy actively uses the servo's step response**, and about 20% of actions sit at the ±30° bound.
 - **Calibration constants are unverified** (see above).
 - **The IMU axes must match the body frame** described above.

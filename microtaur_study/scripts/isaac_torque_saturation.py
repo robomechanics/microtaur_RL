@@ -42,10 +42,10 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper  # noqa: E402
 from microtaur_common.robot_constants import LEG_JOINT_NAMES  # noqa: E402
 from microtaur_isaac import terrains as TR  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
-from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg  # noqa: E402
+from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_kwargs  # noqa: E402
 
 N = 100  # 10 per column; A = cols 0-1, B = 2-6, C = 7-9
-cfg = MicrotaurTeacherCurPlayEnvCfg()
+cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = N
 cfg.curriculum.command_ranges = None
 cfg.commands.twist.resampling_time_range = (1e9, 1e9)
