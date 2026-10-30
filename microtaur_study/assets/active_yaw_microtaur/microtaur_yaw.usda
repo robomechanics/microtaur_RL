@@ -87,10 +87,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (-0.02220932, -0.021805575, -0.004136549)
+        point3f physics:centerOfMass = (-0.02264615, -0.021351555, -0.004136549)
         float3 physics:diagonalInertia = (0.000003526234, 0.0000034214079, 1.2126922e-7)
         float physics:mass = 0.005449409
-        quatf physics:principalAxes = (-0.2700109, 0.64856285, 0.265165, 0.6604149)
+        quatf physics:principalAxes = (-0.2633128, 0.65121347, 0.2585871, 0.66311395)
         quatd xformOp:orient = (0.0190385262809048, -0.019038526280905937, 0.7068504329184868, 0.7068504329184858)
         double3 xformOp:translate = (-0.13810173617998245, -0.0484600000000001, 0.19422340082936607)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
@@ -152,10 +152,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (-0.004089928, -0.03085465, -0.004136549)
+        point3f physics:centerOfMass = (-0.0097245155, 0.02956638, -0.004136549)
         float3 physics:diagonalInertia = (0.0000035262333, 0.0000034214072, 1.2126922e-7)
         float physics:mass = 0.005449409
-        quatf physics:principalAxes = (0.5270008, 0.4701921, -0.5366312, 0.46175364)
+        quatf physics:principalAxes = (0.4183334, 0.56759864, -0.41082603, 0.57797134)
         quatd xformOp:orient = (0.19232223867490938, 0.19232223867490966, 0.6804499662069732, -0.6804499662069737)
         double3 xformOp:translate = (-0.13810173617998253, 0.0484599999999999, 0.1942234008293659)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
@@ -178,10 +178,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (-0.006181882, 0.040949743, -0.0015)
+        point3f physics:centerOfMass = (0.04140699, 0.0007472427, -0.0015)
         float3 physics:diagonalInertia = (0.000004151141, 0.000004038937, 1.2618081e-7)
         float physics:mass = 0.00548935
-        quatf physics:principalAxes = (0.45440346, 0.54177254, -0.45440346, 0.54177254)
+        quatf physics:principalAxes = (-0.01526324, 0.706942, 0.01526324, 0.706942)
         quatd xformOp:orient = (0.2431718935514558, 0.24317189355144805, 0.6639784862377708, -0.6639784862377704)
         double3 xformOp:translate = (-0.029948263820017557, 0.048459999999999975, 0.1942234008293659)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
@@ -217,10 +217,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (-0.030687667, 0.005196874, -0.004136549)
+        point3f physics:centerOfMass = (-0.030474378, 0.0063287215, -0.004136549)
         float3 physics:diagonalInertia = (0.000003526236, 0.00000342141, 1.2126921e-7)
         float physics:mass = 0.005449409
-        quatf physics:principalAxes = (0.05977506, 0.6982122, -0.05870238, 0.71097165)
+        quatf physics:principalAxes = (0.072919615, 0.6970065, -0.07161104, 0.7097439)
         quatd xformOp:orient = (0.1740378549713523, 0.17403785497135155, -0.6853545250722215, 0.6853545250722223)
         double3 xformOp:translate = (0.02844826382001755, 0.048459999999999996, 0.18902340082936597)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
@@ -243,10 +243,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (0.041406997, 0.00074726966, -0.0015)
+        point3f physics:centerOfMass = (-0.0061819097, 0.040949747, -0.0015)
         float3 physics:diagonalInertia = (0.0000041511407, 0.0000040389364, 1.2618118e-7)
         float physics:mass = 0.00548935
-        quatf physics:principalAxes = (-0.01526333, 0.706942, 0.01526333, 0.706942)
+        quatf physics:principalAxes = (0.4544034, 0.5417726, -0.4544034, 0.5417726)
         quatd xformOp:orient = (0.3391463791588254, 0.3391463791588254, -0.620467350876304, 0.620467350876304)
         double3 xformOp:translate = (0.1366017361799825, 0.04846, 0.189023400829366)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
@@ -282,10 +282,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (-0.03091608, 0.0035966565, -0.004136549)
+        point3f physics:centerOfMass = (-0.024018673, 0.01979503, -0.004136549)
         float3 physics:diagonalInertia = (0.0000035262356, 0.0000034214095, 1.2126922e-7)
         float physics:mass = 0.005449409
-        quatf physics:principalAxes = (0.041292932, 0.6995011, -0.040551864, 0.7122841)
+        quatf physics:principalAxes = (0.2410599, 0.65947205, -0.23673373, 0.6715235)
         quatd xformOp:orient = (0.4532069491336943, -0.4532069491336955, -0.5427738583028197, -0.5427738583028183)
         double3 xformOp:translate = (0.02844826382001754, -0.048459999999999996, 0.189023400829366)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
@@ -308,10 +308,10 @@ def Xform "microtaur" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     )
     {
-        point3f physics:centerOfMass = (0.041406997, -0.00074726966, -0.0015)
+        point3f physics:centerOfMass = (-0.0061819097, -0.040949747, -0.0015)
         float3 physics:diagonalInertia = (0.0000041511407, 0.0000040389364, 1.2618118e-7)
         float physics:mass = 0.00548935
-        quatf physics:principalAxes = (0.01526333, 0.706942, -0.01526333, 0.706942)
+        quatf physics:principalAxes = (0.5417726, 0.4544034, -0.5417726, 0.4544034)
         quatd xformOp:orient = (0.3391463791588254, -0.3391463791588254, -0.620467350876304, -0.620467350876304)
         double3 xformOp:translate = (0.13660173617998247, -0.04846, 0.18902340082936597)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]

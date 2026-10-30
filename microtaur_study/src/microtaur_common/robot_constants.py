@@ -179,7 +179,7 @@ YAW_IMU2_QUAT_IN_REAR = (0.0, 0.0, 1.0, 0.0)  # wxyz
 # total; KD follows from zeta. isaac_make_usd_yaw.py checks the resulting inertia and natural frequency.
 XL330_M288_STALL_TORQUE_NM = 0.52  # datasheet
 SPINE_KP = SPINE_KP_FROM_MEASUREMENT  # 7.44 N m / rad
-SPINE_LINK_INERTIA = 2.3838e-3  # mj_fullM about the spine axis at the stand pose, without armature (checked by the build)
+SPINE_LINK_INERTIA = 2.3524e-3  # mj_fullM about the spine axis at the stand pose, without armature (checked by the build)
 SPINE_ARMATURE = SPINE_INERTIA_FROM_MEASUREMENT - SPINE_LINK_INERTIA  # 0.01395 -> total 0.0163 kg m^2
 SPINE_KD = 2.0 * SPINE_ZETA_MEASURED * math.sqrt(SPINE_KP * SPINE_INERTIA_FROM_MEASUREMENT)  # 0.238
 # Measured, not a protection choice: the current clamps near 1300 mA (2026-10-28 amplitude sweep, torque
@@ -187,3 +187,11 @@ SPINE_KD = 2.0 * SPINE_ZETA_MEASURED * math.sqrt(SPINE_KP * SPINE_INERTIA_FROM_M
 SPINE_EFFORT_LIMIT_NM = 0.50
 SPINE_VELOCITY_LIMIT_RAD_S = 0.80 * 103.0 * 2.0 * math.pi / 60.0  # datasheet no-load 103 rpm (TO CONFIRM)
 SPINE_FRICTIONLOSS_NM = 0.010  # the XML's value; not measured
+# Hip (motor-pivot midpoint) heights in the yaw root frame at spine 0, legs 1..4 (MuJoCo xanchor of the a / e joints,
+# robot_2imu.xml): the rear legs hang from the rear half, whose motor axes sit 5.2 mm higher (rigid: 9.5 mm everywhere).
+YAW_HIP_Z_ROOT_M = (0.0095, 0.0095, 0.0043, 0.0043)
+YAW_TOTAL_MASS_KG = 0.723783  # robot_2imu.xml (chassis masses not re-measured yet)
+# Spine copper loss, same stall-point model as the legs: k_t = 0.52 N m / 1.47 A (datasheet, TO CONFIRM for
+# the M288), R = 5 V / 1.47 A -> R / k_t^2.
+XL330_M288_KT_NM_PER_A = XL330_M288_STALL_TORQUE_NM / XL330_STALL_CURRENT_A
+SPINE_COPPER_W_PER_NM2 = XL330_R_OHM / XL330_M288_KT_NM_PER_A**2  # ~27 (legs: ~159)

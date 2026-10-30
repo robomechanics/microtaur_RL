@@ -99,7 +99,7 @@
           <geom type="mesh" class="collision" pos="-0.0464129 7.07767e-16 -0.004" quat="0.249033 -6.29371e-15 -1.22125e-15 -0.968495" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
           <body name="spacer_for_legs" pos="-0.0464129 -6.93889e-17 -0.0055" quat="0.455826 3.64934e-16 -1.66533e-16 -0.890069">
             <joint axis="0 0 1" name="leg1_b_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-            <inertial pos="-0.02220932109 -0.02180557577 -0.004136548659" mass="0.005449409086" fullinertia="1.741636213e-06 1.802157226e-06 3.52511751e-06 -1.649233491e-06 -4.398766962e-08 -4.318801367e-08"/>
+            <inertial pos="-0.02264615036 -0.02135155619 -0.004136548659" mass="0.005449409086" fullinertia="1.674908467e-06 1.868884972e-06 3.52511751e-06 -1.646657246e-06 -4.485285148e-08 -4.228878477e-08"/>
             <geom type="mesh" class="visual" pos="-0.0257679 -0.0242949 -0.006" quat="0.65719 0.65719 0.260961 0.260961" mesh="leglink2_v2" material="leglink2_v2_material"/>
             <geom type="mesh" class="collision" pos="-0.0257679 -0.0242949 -0.006" quat="0.65719 0.65719 0.260961 0.260961" mesh="leglink2_v2" material="leglink2_v2_material"/>
             <geom type="mesh" class="visual" pos="2.77556e-17 6.93889e-18 0" quat="0.707107 -0.707107 0 -1.21819e-18" mesh="spacer_for_legs" material="spacer_for_legs_material"/>
@@ -161,7 +161,7 @@
           <geom type="mesh" class="collision" pos="-0.0464129 -5.46785e-15 -0.004" quat="4.48253e-14 -0.376448 -0.926438 2.20212e-14" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
           <body name="spacer_for_legs_2" pos="-0.0464129 4.16334e-17 -0.0055" quat="0.222885 -6.33023e-16 -1.11022e-16 0.974845">
             <joint axis="0 0 1" name="leg2_b_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-            <inertial pos="-0.004089928363 -0.03085465022 -0.004136548659" mass="0.005449409086" fullinertia="3.364441297e-06 1.793515235e-07 3.525116893e-06 -4.297517546e-07 -8.100491541e-09 -6.111056502e-08"/>
+            <inertial pos="-0.009724515037 0.0295663789 -0.004136548659" mass="0.005449409086" fullinertia="3.099364444e-06 4.444283768e-07 3.525116893e-06 9.79139626e-07 -1.926032557e-08 5.855902133e-08"/>
             <geom type="mesh" class="visual" pos="0 0 6.93889e-18" quat="0.707107 -0.707107 -0 4.13938e-18" mesh="spacer_for_legs" material="spacer_for_legs_material"/>
             <geom type="mesh" class="collision" pos="0 0 6.93889e-18" quat="0.707107 -0.707107 -0 4.13938e-18" mesh="spacer_for_legs" material="spacer_for_legs_material"/>
             <geom type="mesh" class="visual" pos="-0.0110651 0.0336422 -0.006" quat="0.572809 0.572809 -0.414596 -0.414596" mesh="leglink2_v2" material="leglink2_v2_material"/>
@@ -193,7 +193,7 @@
           <geom type="mesh" class="collision" pos="-0.0464129 -2.1233e-15 -0.004" quat="1.88699e-14 0.928794 0.370596 3.5084e-14" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
           <body name="leglink2_v2_with_leg_down_2" pos="-0.0464129 -1.38778e-17 -0.0055" quat="0.659012 -1.44954e-15 -4.66294e-15 0.752132">
             <joint axis="0 0 1" name="leg2_d_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-            <inertial pos="-0.006181882317 0.04094974397 -0.001500000011" mass="0.005489349769" fullinertia="3.920378917e-06 2.447387505e-07 4.151141027e-06 6.706953809e-07 8.115546788e-17 -3.000114945e-16"/>
+            <inertial pos="0.04140699009 0.0007472427084 -0.001500000011" mass="0.005489349769" fullinertia="1.334697453e-07 4.031647922e-06 4.151141027e-06 -1.687207088e-07 -3.080338254e-16 -4.10273444e-17"/>
             <geom type="mesh" class="visual" pos="0.0844882 0.00800113 -0.0015" quat="0.270598 0.653281 -0.270598 0.653281" mesh="foot" material="foot_material"/>
             <geom type="mesh" class="collision" pos="0.0844882 0.00800113 -0.0015" quat="0.270598 0.653281 -0.270598 0.653281" mesh="foot" material="foot_material"/>
             <geom type="mesh" class="visual" pos="0.0354151 -3.46945e-18 0" quat="0.707107 -0.707107 -0 1.40926e-17" mesh="leglink2_v2_with_leg_down" material="leglink2_v2_with_leg_down_material"/>
@@ -234,7 +234,7 @@
         <geom type="mesh" class="collision" pos="-0.0464129 -9.15934e-16 -0.004" quat="6.24275e-15 0.326921 0.945052 -7.6641e-15" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
         <body name="spacer_for_legs_3" pos="-0.0464129 -6.93889e-18 -0.0055" quat="0.680841 -5.23538e-16 4.44089e-16 0.732432">
           <joint axis="0 0 1" name="leg3_b_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-          <inertial pos="-0.03068766698 0.005196873983 -0.004136548659" mass="0.005449409086" fullinertia="2.143592723e-07 3.329436327e-06 3.525119671e-06 5.431059808e-07 -6.077983884e-08 1.029290247e-08"/>
+          <inertial pos="-0.03047437754 0.00632872164 -0.004136548659" mass="0.005449409086" fullinertia="2.587845177e-07 3.285011082e-06 3.525119671e-06 6.567941584e-07 -6.035739884e-08 1.253463424e-08"/>
           <geom type="mesh" class="visual" pos="-0.0346753 0.00720115 -0.006" quat="0.703404 0.703404 -0.0722684 -0.0722684" mesh="leglink2_v2" material="leglink2_v2_material"/>
           <geom type="mesh" class="collision" pos="-0.0346753 0.00720115 -0.006" quat="0.703404 0.703404 -0.0722684 -0.0722684" mesh="leglink2_v2" material="leglink2_v2_material"/>
           <geom type="mesh" class="visual" pos="0 1.73472e-18 0" quat="0.707107 -0.707107 -0 -1.82707e-17" mesh="spacer_for_legs" material="spacer_for_legs_material"/>
@@ -266,7 +266,7 @@
         <geom type="mesh" class="collision" pos="-0.0464129 6.52256e-16 -0.004" quat="3.49136e-14 0.946744 0.321987 -1.85239e-14" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
         <body name="leglink2_v2_with_leg_down_3" pos="-0.0464129 -1.38778e-17 -0.0055" quat="1 -0 -4.24508e-18 6.22595e-30">
           <joint axis="0 0 1" name="leg3_d_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-          <inertial pos="0.04140699496 0.0007472696721 -0.001500000011" mass="0.005489349769" fullinertia="1.334701992e-07 4.031647388e-06 4.151140948e-06 -1.687216718e-07 -3.08092653e-16 -4.103145612e-17"/>
+          <inertial pos="-0.006181909687 0.04094974525 -0.001500000011" mass="0.005489349769" fullinertia="3.920378149e-06 2.447394383e-07 4.151140948e-06 6.70696182e-07 8.116080551e-17 -3.000289356e-16"/>
           <geom type="mesh" class="visual" pos="-0.00465373 0.035108 2.498e-16" quat="0.465992 -0.465992 -0.531838 0.531838" mesh="leglink2_v2_with_leg_down" material="leglink2_v2_with_leg_down_material"/>
           <geom type="mesh" class="collision" pos="-0.00465373 0.035108 2.498e-16" quat="0.465992 -0.465992 -0.531838 0.531838" mesh="leglink2_v2_with_leg_down" material="leglink2_v2_with_leg_down_material"/>
           <geom type="mesh" class="visual" pos="-0.0190339 0.0827042 -0.0015" quat="0.313026 -0.634046 -0.313026 -0.634046" mesh="foot" material="foot_material"/>
@@ -296,7 +296,7 @@
         <geom type="mesh" class="collision" pos="-0.0464129 -9.22873e-16 -0.004" quat="0.292253 -1.0502e-14 7.43849e-15 -0.956341" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
         <body name="spacer_for_legs_4" pos="-0.0464129 -2.08167e-17 -0.0055" quat="0.93056 -8.95142e-16 -7.77156e-16 -0.36614">
           <joint axis="0 0 1" name="leg4_b_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-          <inertial pos="-0.03091607997 0.003596656472 -0.004136548659" mass="0.005449409086" fullinertia="1.664386979e-07 3.377356465e-06 3.525119234e-06 3.786706005e-07 -6.123223248e-08 7.123519716e-09"/>
+          <inertial pos="-0.02401867361 0.01979503111 -0.004136548659" mass="0.005449409086" fullinertia="1.456799728e-06 2.086995435e-06 3.525119234e-06 1.619136496e-06 -4.757126413e-08 3.920593905e-08"/>
           <geom type="mesh" class="visual" pos="0 0 -6.93889e-18" quat="0.707107 -0.707107 0 2.50001e-18" mesh="spacer_for_legs" material="spacer_for_legs_material"/>
           <geom type="mesh" class="collision" pos="0 0 -6.93889e-18" quat="0.707107 -0.707107 0 2.50001e-18" mesh="spacer_for_legs" material="spacer_for_legs_material"/>
           <geom type="mesh" class="visual" pos="-0.0273296 0.0225238 -0.006" quat="0.238907 0.238907 0.665525 0.665525" mesh="leglink2_v2" material="leglink2_v2_material"/>
@@ -328,7 +328,7 @@
         <geom type="mesh" class="collision" pos="-0.0464129 -9.29812e-16 -0.004" quat="0.975209 1.52903e-14 -1.79856e-14 -0.221286" mesh="7487n16_precision_stainless_steel_ball_bearing__2" material="7487n16_precision_stainless_steel_ball_bearing__2_material"/>
         <body name="leglink2_v2_with_leg_down_4" pos="-0.0464129 -1.38778e-17 -0.0055" quat="1 0 5.11552e-19 -1.09634e-29">
           <joint axis="0 0 1" name="leg4_d_joint" type="hinge" frictionloss="0.001" armature="0.000001" damping="0.0001"/>
-          <inertial pos="0.04140699496 -0.0007472696721 -0.001499999989" mass="0.005489349769" fullinertia="1.334701992e-07 4.031647388e-06 4.151140948e-06 1.687216718e-07 3.080928032e-16 -4.10314205e-17"/>
+          <inertial pos="-0.006181909687 -0.04094974525 -0.001499999989" mass="0.005489349769" fullinertia="3.920378149e-06 2.447394383e-07 4.151140948e-06 -6.70696182e-07 -8.116015011e-17 -3.000263556e-16"/>
           <geom type="mesh" class="visual" pos="-0.0190339 -0.0827042 -0.0015" quat="0.634046 0.313026 0.634046 -0.313026" mesh="foot" material="foot_material"/>
           <geom type="mesh" class="collision" pos="-0.0190339 -0.0827042 -0.0015" quat="0.634046 0.313026 0.634046 -0.313026" mesh="foot" material="foot_material"/>
           <geom type="mesh" class="visual" pos="-0.00465373 -0.035108 -0.003" quat="0.465992 0.465992 -0.531838 -0.531838" mesh="leglink2_v2_with_leg_down" material="leglink2_v2_with_leg_down_material"/>

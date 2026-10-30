@@ -34,6 +34,9 @@ FOOT_SPHERE_RADIUS_M = 0.0062
 
 # Fixed angle from the D-C link to the D-F foot extension.
 FOOT_EXTENSION_ANGLE_RAD = math.radians(4.31513)
+# The active-yaw robot's MJCF (assets/active_yaw_microtaur/robot_2imu.xml) has the same links and
+# |DF|, but its foot is bent 5.40982 deg off D-C: the foot sphere sits ~1.6 mm from the rigid model's.
+YAW_FOOT_EXTENSION_ANGLE_RAD = math.radians(5.40982)
 
 # Link orientations at zero joint position in the canonical x-z frame.
 THETA_AB_ZERO_RAD = -3.0 * math.pi / 4.0
@@ -117,14 +120,15 @@ class FiveBarSolution:
 
 
 class MicrotaurFiveBarKinematics:
-  """Analytical forward and inverse kinematics for all four Microtaur legs."""
+  """Analytical forward and inverse kinematics for all four Microtaur legs
+  (foot_extension_angle_rad: YAW_FOOT_EXTENSION_ANGLE_RAD for the active-yaw robot, see five_bar_for)."""
 
-  def __init__(self) -> None:
+  def __init__(self, foot_extension_angle_rad: float = FOOT_EXTENSION_ANGLE_RAD) -> None:
     self.l0 = MOTOR_PIVOT_DISTANCE_M
     self.l1 = PROXIMAL_LINK_M
     self.l2 = DISTAL_LINK_M
     self.lf = DISTAL_TO_FOOT_M
-    self.foot_delta = FOOT_EXTENSION_ANGLE_RAD
+    self.foot_delta = foot_extension_angle_rad
 
     self.a = np.asarray((-0.5 * self.l0, 0.0), dtype=np.float64)
     self.e = np.asarray((+0.5 * self.l0, 0.0), dtype=np.float64)
@@ -627,3 +631,13 @@ def self_test() -> None:
 if __name__ == "__main__":
   self_test()
   print("Microtaur five-bar kinematics self-test passed.")
+
+
+_FIVE_BAR = {}
+
+
+def five_bar_for(yaw: bool) -> MicrotaurFiveBarKinematics:
+  """Shared kinematics instance of the rigid (False) or active-yaw (True) robot's legs."""
+  if yaw not in _FIVE_BAR:
+    _FIVE_BAR[yaw] = MicrotaurFiveBarKinematics(YAW_FOOT_EXTENSION_ANGLE_RAD if yaw else FOOT_EXTENSION_ANGLE_RAD)
+  return _FIVE_BAR[yaw]
