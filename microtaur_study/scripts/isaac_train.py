@@ -6,18 +6,34 @@
 Registers the microtaur_isaac tasks, then runs
 IsaacLab/scripts/reinforcement_learning/rsl_rl/train.py unchanged (logging,
 checkpoints, video, resume all come from it). Logs go to ./logs/rsl_rl/<experiment>.
-Set ISAACLAB_DIR if IsaacLab is not at the default path below.
+IsaacLab is found from the installed isaaclab package (a source install: <IsaacLab>/source/isaaclab);
+set ISAACLAB_DIR to point at another checkout.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import runpy
 import sys
 from pathlib import Path
 
-ISAACLAB = Path(os.environ.get("ISAACLAB_DIR", "/home/rml3/Documents/ben/spine/IsaacLab"))
-TRAIN = ISAACLAB / "scripts" / "reinforcement_learning" / "rsl_rl" / "train.py"
+REL = Path("scripts") / "reinforcement_learning" / "rsl_rl" / "train.py"
+
+
+def isaaclab_dir() -> Path:
+  if os.environ.get("ISAACLAB_DIR"):
+    return Path(os.environ["ISAACLAB_DIR"])
+  spec = importlib.util.find_spec("isaaclab")  # <IsaacLab>/source/isaaclab/isaaclab/__init__.py
+  if spec is not None and spec.origin is not None:
+    root = Path(spec.origin).resolve().parents[3]
+    if (root / REL).exists():
+      return root
+  sys.exit("isaac_train.py: IsaacLab's rsl_rl train.py not found; install IsaacLab from source "
+           "(git clone, ./isaaclab.sh --install rsl_rl) or set ISAACLAB_DIR")
+
+
+TRAIN = isaaclab_dir() / REL
 
 sys.path.insert(0, str(TRAIN.parent))  # train.py imports its sibling cli_args
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
