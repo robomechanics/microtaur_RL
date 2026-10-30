@@ -430,6 +430,25 @@ class MicrotaurObservationsCfg:
 OBS_CLIP = 100.0  # far above any normal value (joint speed <= 32 rad/s, log forces < 10, air time <= 20 s)
 
 
+def adapt_student_group(group, variant: str = "rigid", leg_polar_obs: bool = False, stage: Sim2RealStage | None = None):
+  """The variant's student group from student_obs_cfg(stage): yaw -> joint terms over the 9 motors and the
+  rear-IMU slot reading IMU 2 (same noise as IMU 1); leg_polar_obs -> virtual legs appended (encoder-biased,
+  FK noise). Used by make_observations_cfg and by eval scripts that add the group to a play cfg."""
+  if variant == "yaw":
+    for name in ("joint_pos", "joint_vel"):
+      t = getattr(group, name)
+      t.params = {**t.params, "asset_cfg": motors_cfg("yaw")}
+    group.imu2_projected_gravity = ObsTerm(func=imu2_projected_gravity, noise=group.projected_gravity.noise)
+    group.imu2_base_ang_vel = ObsTerm(func=imu2_ang_vel, noise=group.base_ang_vel.noise)
+  elif variant != "rigid":
+    raise ValueError(f"unknown robot variant {variant!r}")
+  if leg_polar_obs:
+    group.leg_polar = ObsTerm(func=leg_polar, params={"asset_cfg": legs_cfg(), "biased": True})
+    if stage is not None:  # joint-angle noise -> r via the lever, theta directly
+      group.leg_polar.noise = UniformNoiseCfg(n_min=-stage.joint_pos_noise * FK_NOISE_LEVER_M, n_max=stage.joint_pos_noise * FK_NOISE_LEVER_M)
+  return group
+
+
 def make_observations_cfg(
   stage: Sim2RealStage, rough: bool = False, teacher: bool = False, play: bool = False, student: bool = False,
   variant: str = "rigid", leg_polar_obs: bool = False,
@@ -446,27 +465,21 @@ def make_observations_cfg(
   if student:
     cfg.student = student_obs_cfg(stage)
   if variant == "yaw":
-    for g in (cfg.policy, cfg.critic, cfg.teacher, cfg.student):
+    for g in (cfg.policy, cfg.critic, cfg.teacher):
       if g is None:
         continue
       for name in ("joint_pos", "joint_vel"):
         t = getattr(g, name)
         t.params = {**t.params, "asset_cfg": motors_cfg("yaw")}
-    if cfg.student is not None:
-      cfg.student.imu2_projected_gravity = ObsTerm(func=imu2_projected_gravity, noise=cfg.student.projected_gravity.noise)
-      cfg.student.imu2_base_ang_vel = ObsTerm(func=imu2_ang_vel, noise=cfg.student.base_ang_vel.noise)
   elif variant != "rigid":
     raise ValueError(f"unknown robot variant {variant!r}")
+  if cfg.student is not None:
+    adapt_student_group(cfg.student, variant, leg_polar_obs, stage)
   if leg_polar_obs:
-    for g, biased in ((cfg.critic, False), (cfg.teacher, False), (cfg.student, True)):
-      if g is None:
-        continue
-      if not biased:
+    for g in (cfg.critic, cfg.teacher):
+      if g is not None:
         g.foot_fk = ObsTerm(func=foot_fk, params={"asset_cfg": legs_cfg(), "biased": False})
-      term = ObsTerm(func=leg_polar, params={"asset_cfg": legs_cfg(), "biased": biased})
-      if biased and stage is not None:  # joint-angle noise -> r via the lever, theta directly
-        term.noise = UniformNoiseCfg(n_min=-stage.joint_pos_noise * FK_NOISE_LEVER_M, n_max=stage.joint_pos_noise * FK_NOISE_LEVER_M)
-      g.leg_polar = term
+        g.leg_polar = ObsTerm(func=leg_polar, params={"asset_cfg": legs_cfg(), "biased": False})
   if play:
     cfg.policy.enable_corruption = False
     for g in (cfg.teacher, cfg.student):

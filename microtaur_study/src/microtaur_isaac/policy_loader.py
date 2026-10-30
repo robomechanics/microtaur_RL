@@ -62,7 +62,9 @@ def prepare_env_cfg(cfg, checkpoint: str):
   g = student_group(checkpoint)
   if g == "student" and getattr(cfg.observations, "student", None) is None:
     from .mdp import observations as O
-    cfg.observations.student = O.student_obs_cfg(None)  # eval: no noise, like the play actor group
+    # eval: no noise, like the play actor group; the run's robot variant / leg_polar layout
+    cfg.observations.student = O.adapt_student_group(O.student_obs_cfg(None), getattr(cfg, "variant", "rigid"),
+                                                     getattr(cfg, "leg_polar_obs", False))
     cfg.observations.student.enable_corruption = False
     for term in O.group_terms(cfg.observations.student).values():
       term.clip = (-O.OBS_CLIP, O.OBS_CLIP)
