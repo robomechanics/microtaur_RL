@@ -21,6 +21,7 @@ FILES=(
   "$MS/scripts/isaac_c_posture.py"
   "$MS/scripts/isaac_turn_legs.py"
   "$MS/scripts/isaac_render_policy.py"
+  "$MS/scripts/plot_turn_trace.py"
   "$MS/scripts/isaac_student_teacher_c.py"
   "$MS/scripts/isaac_torque_saturation.py"
   "$MS/scripts/export_student_bundle.py"
