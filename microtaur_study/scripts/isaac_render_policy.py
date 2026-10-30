@@ -48,6 +48,7 @@ from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_
 LEVELS = [0, 3, 0, 2, 4, 6, 7, 0, 3, 6]  # per env / column
 cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = 10
+cfg.sim.device = args.device  # --device cpu: physics on the CPU when the shared GPU is full (rendering stays on the GPU)
 if args.no_rails:
   g = cfg.scene.terrain.terrain_generator
   subs = dict(g.sub_terrains)
