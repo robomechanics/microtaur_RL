@@ -28,6 +28,9 @@ ap.add_argument("--eye", type=float, nargs=3, default=(0.30, -0.45, 0.18))
 ap.add_argument("--lookat", type=float, nargs=3, default=(0.0, 0.0, 0.04))
 ap.add_argument("--no-rails", action="store_true")
 ap.add_argument("--still-eye", type=float, nargs=3, default=None, help="extra still frame, camera relative to the robot")
+ap.add_argument("--tour", action="store_true",
+                help="turn tour instead of straight --speed: TOUR segments (vx, yaw rate, s); frames carry the command, the "
+                     "measured yaw rate and (yaw robot) the spine angle")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
@@ -46,6 +49,8 @@ from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
 from microtaur_isaac.policy_loader import load_policy, prepare_env_cfg, variant_kwargs  # noqa: E402
 
 LEVELS = [0, 3, 0, 2, 4, 6, 7, 0, 3, 6]  # per env / column
+# straight, left, straight, right, straight; +-0.25 rad/s is the trained yaw-rate range (86 deg per 6 s turn)
+TOUR = [(0.20, 0.0, 3.0), (0.15, 0.25, 6.0), (0.20, 0.0, 2.0), (0.15, -0.25, 6.0), (0.20, 0.0, 3.0)]
 cfg = MicrotaurTeacherCurPlayEnvCfg(**variant_kwargs(args.checkpoint))
 cfg.scene.num_envs = 10
 cfg.sim.device = args.device  # --device cpu: physics on the CPU when the shared GPU is full (rendering stays on the GPU)
@@ -69,9 +74,26 @@ policy, policy_reset = load_policy(w, args.checkpoint)
 cmd = env.command_manager.get_term("twist")
 
 
-def pin():
-  cmd.vel_command_b[:, 0] = args.speed
-  cmd.vel_command_b[:, 1:] = 0.0
+def command(k):
+  if not args.tour:
+    return args.speed, 0.0
+  t_s = k * env.step_dt
+  for vx, wz, dur in TOUR:
+    if t_s < dur:
+      return vx, wz
+    t_s -= dur
+  return TOUR[-1][0], TOUR[-1][1]
+
+
+def pin(k=0):
+  vx, wz = command(k)
+  cmd.vel_command_b[:, 0] = vx
+  cmd.vel_command_b[:, 1] = 0.0
+  cmd.vel_command_b[:, 2] = wz
+
+
+if args.tour:
+  args.steps = round(sum(d for _, _, d in TOUR) / env.step_dt)
 
 
 pin()
@@ -94,9 +116,10 @@ def follow():
 
 follow()
 frames, resets = [], {}
+spine = robot.joint_names.index("spine_joint_act") if "spine_joint_act" in robot.joint_names else None
 with torch.inference_mode():
   for k in range(args.steps):
-    pin()
+    pin(k)
     obs, _, dones, _ = w.step(policy(obs))
     policy_reset(dones)
     if bool(dones[args.env]):
@@ -109,7 +132,17 @@ with torch.inference_mode():
         env.sim.render()
       imageio.imwrite(args.out.replace(".mp4", "_still.png"), env.render())
     follow()
-    frames.append(env.render())
+    img = env.render()
+    if args.tour:
+      from PIL import Image, ImageDraw, ImageFont
+      vx, wz = command(k)
+      txt = f"t {k * env.step_dt:4.1f} s  cmd vx {vx:.2f} m/s  yaw {wz:+.2f} rad/s | yaw rate {float(robot.data.root_link_ang_vel_b[args.env, 2]):+.2f}"
+      if spine is not None:
+        txt += f"  spine {np.degrees(float(robot.data.joint_pos[args.env, spine])):+5.1f} deg"
+      im = Image.fromarray(img)
+      ImageDraw.Draw(im).text((12, 12), txt, fill=(255, 0, 0), font=ImageFont.load_default(size=20))
+      img = np.asarray(im)
+    frames.append(img)
 Path(args.out).parent.mkdir(parents=True, exist_ok=True)
 imageio.mimsave(args.out, frames, fps=round(1.0 / env.step_dt))
 r = robot.data.root_link_pos_w[args.env] - t.env_origins[args.env]
