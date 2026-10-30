@@ -39,13 +39,14 @@ trap 'git -C "$REPO" worktree remove --force "$WT"' EXIT
 git -C "$WT" read-tree --empty  # start from an empty index; only the kit files are added back
 find "$WT" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 
-# tracked files only (no caches, no local outputs)
-mapfile -t TRACKED < <(git -C "$REPO" ls-files -- "${FILES[@]}" "${DIRS[@]}" | grep -v -e '__pycache__' -e '\.pyc$')
+# committed content of HEAD only (no uncommitted edits, caches or local outputs)
+mapfile -t TRACKED < <(git -C "$REPO" ls-tree -r --name-only HEAD -- "${FILES[@]}" "${DIRS[@]}")
 for f in "${TRACKED[@]}"; do
   mkdir -p "$WT/$(dirname "$f")"
-  cp "$REPO/$f" "$WT/$f"
+  git -C "$REPO" cat-file blob "HEAD:$f" > "$WT/$f"
 done
-cp "$REPO/$MS/TRAIN_KIT_README.md" "$WT/README.md"
+chmod +x "$WT/$MS/scripts/make_train_kit.sh"
+git -C "$REPO" cat-file blob "HEAD:$MS/TRAIN_KIT_README.md" > "$WT/README.md"
 cat > "$WT/.gitignore" <<'EOF'
 runs/
 __pycache__/
