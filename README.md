@@ -32,7 +32,7 @@ IsaacLab has to be installed **from source**, as above. The pipeline runs IsaacL
 and finds it through the installed `isaaclab` package. If your IsaacLab checkout lives elsewhere, set `ISAACLAB_DIR=/path/to/IsaacLab`.
 The Isaac Sim EULA is accepted automatically (`OMNI_KIT_ACCEPT_EULA=YES`). The first start of Isaac Sim compiles shaders and takes a few minutes.
 
-## 2. Check the install (about 40 min)
+## 2. Check the install (about 10 min on a free GPU)
 
 ```bash
 python microtaur_study/pipeline.py --robot yaw --smoke
