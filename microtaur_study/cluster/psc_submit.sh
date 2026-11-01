@@ -5,6 +5,7 @@
 #   bash microtaur_study/cluster/psc_submit.sh preflight                      # ~30 min, <= 1 SU
 #   bash microtaur_study/cluster/psc_submit.sh plan <plan.txt> [-t 06:00:00]  # one job per plan line
 #   CONFIRM_SU=yes bash microtaur_study/cluster/psc_submit.sh ...
+#   MT_DEPEND=afterok:<preflight job id> ... plan <plan.txt>                 # run only if the preflight passes
 #
 # Plan file: one run per line, "<name> <yaw|rigid> [seed=N] [Hydra override ...]" (overrides without spaces);
 # "= <override ...>" lines set overrides added to every later run line; # comments. A run whose $MT_RUNS/<name>
@@ -22,6 +23,7 @@ acct="$(sacctmgr -nP show user "$USER" format=DefaultAccount 2>/dev/null | head 
 A=(); [ -n "$acct" ] && A=(-A "$acct")
 RES=(--gpus="$MT_GPU:1" --cpus-per-task="$MT_CPUS")
 SB=(sbatch --parsable --export=ALL,MT_REPO="$MT_REPO" "${RES[@]}")
+[ -n "${MT_DEPEND:-}" ] && SB+=(--dependency="$MT_DEPEND" --kill-on-invalid-dep=yes)
 mkdir -p "$MT_RUNS/slurm"
 cd "$MT_PROJECT"
 submit() {  # submit <sbatch args...>
@@ -29,7 +31,7 @@ submit() {  # submit <sbatch args...>
     id=$("${SB[@]}" "${A[@]}" -o "$MT_RUNS/slurm/%x_%j.out" "$@")
     echo "submitted $id: $*"
   else
-    echo "dry-run: sbatch ${RES[*]} ${A:+-A <default account>} $*"
+    echo "dry-run: sbatch ${RES[*]} ${MT_DEPEND:+--dependency=$MT_DEPEND} ${A:+-A <default account>} $*"
   fi
 }
 su_per_h=1; case "$MT_GPU" in h100*) su_per_h=2 ;; esac

@@ -59,8 +59,8 @@ if [ "$MODE" = preflight ]; then
     else echo "timing: FAIL, see $OUT/timing.log and $MT_RUNS/pf${SLURM_JOB_ID}_t30/"; fi
   } > "$OUT/preflight.txt"
   cat "$OUT/preflight.txt"
-  grep -q "smoke: PASS" "$OUT/preflight.txt" && CLEAN=1
-  exit 0
+  grep -q "smoke: PASS" "$OUT/preflight.txt" && grep -q "s/iter" "$OUT/preflight.txt" && { CLEAN=1; exit 0; }
+  exit 1   # non-zero: jobs submitted with --dependency=afterok:<this job> are cancelled
 fi
 
 [ "$MODE" = pipeline ] || { echo "[mt] unknown mode $MODE"; exit 2; }
