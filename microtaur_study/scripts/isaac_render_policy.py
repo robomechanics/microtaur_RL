@@ -37,6 +37,9 @@ ap.add_argument("--schedule", default=None,
 ap.add_argument("--fixed-cam", action="store_true", help="camera stays where it starts (eye / lookat relative to the spawn)")
 ap.add_argument("--trace", action="store_true",
                 help="also save <out>.npz per policy step: time, command, yaw rate, root xy / yaw, spine angle, foot contacts")
+ap.add_argument("--lock-spine", action="store_true", help="yaw robot: replace the policy's spine action by 0 (servo holds 0)")
+ap.add_argument("--spine-action", type=float, default=None,
+                help="yaw robot: replace the policy's spine action by this constant (1 = +0.35 rad, clamped to 0.33 rad)")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
@@ -128,6 +131,7 @@ def follow():
 
 follow()
 frames, resets = [], {}
+spine_override = 0.0 if args.lock_spine else args.spine_action
 spine = robot.joint_names.index("spine_joint_act") if "spine_joint_act" in robot.joint_names else None
 trace = {k: [] for k in ("t", "cmd_vx", "cmd_wz", "wz", "vx", "x", "y", "yaw", "spine", "contact")}
 if args.trace:
@@ -138,7 +142,10 @@ if args.trace:
 with torch.inference_mode():
   for k in range(args.steps):
     pin(k)
-    obs, _, dones, _ = w.step(policy(obs))
+    act = policy(obs)
+    if spine_override is not None and spine is not None:
+      act[:, -1] = spine_override  # the 9th action is the spine
+    obs, _, dones, _ = w.step(act)
     policy_reset(dones)
     if bool(dones[args.env]):
       tm = env.termination_manager
@@ -166,7 +173,7 @@ with torch.inference_mode():
       vx, wz = command(k)
       txt = f"t {k * env.step_dt:4.1f} s  cmd vx {vx:.2f} m/s  yaw {wz:+.2f} rad/s | yaw rate {float(robot.data.root_link_ang_vel_b[args.env, 2]):+.2f}"
       if spine is not None:
-        txt += f"  spine {np.degrees(float(robot.data.joint_pos[args.env, spine])):+5.1f} deg"
+        txt += f"  spine {np.degrees(float(robot.data.joint_pos[args.env, spine])):+5.1f} deg" + (" (locked)" if args.lock_spine else " (forced)" if args.spine_action is not None else "")
       im = Image.fromarray(img)
       font, dr = ImageFont.load_default(size=20), ImageDraw.Draw(im)
       x0, y0, x1, y1 = dr.textbbox((12, 12), txt, font=font)

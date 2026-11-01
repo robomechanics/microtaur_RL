@@ -20,6 +20,7 @@ FILES=(
   "$MS/scripts/isaac_eval_terrain.py"
   "$MS/scripts/isaac_c_posture.py"
   "$MS/scripts/isaac_turn_legs.py"
+  "$MS/scripts/isaac_spine_turn.py"
   "$MS/scripts/isaac_render_policy.py"
   "$MS/scripts/plot_turn_trace.py"
   "$MS/scripts/isaac_student_teacher_c.py"

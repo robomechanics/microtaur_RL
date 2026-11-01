@@ -96,6 +96,7 @@ How to read the evaluation:
 | `terrain_eval.log` | per terrain and level: falls; whether the robot covered half a tile (3.15 m) in 20 s at 0.20 m/s; speed and heading drift |
 | `c_posture/c_posture.txt` | on the side step (one side raised by up to 36.8 mm): body roll, and how much shorter the stance legs on the raised side are (target: about the step height, roll about 0) |
 | `turn_legs_<label>.txt` | measured yaw rate for ±0.25 rad/s commands (turning is still weak: 20-35 % of the command); spine angle in turns; virtual leg length per leg while trotting |
+| `spine_turn_<label>.txt` / `.png` | tight S tours (commanded radius 0.4 / 0.2 m, turn on the spot): yaw rate, path radius and spine bend, each with the spine free and locked at 0 (how much of the turning comes from the spine); the rigid robot gives the baseline |
 
 ## 5. Where things are
 

@@ -8,6 +8,8 @@
   python microtaur_study/pipeline.py --stage student --teacher-ckpt runs/logs/rsl_rl/.../model_2999.pt
   python microtaur_study/pipeline.py --stage eval --checkpoint runs/logs/rsl_rl/.../model_2999.pt
   python microtaur_study/pipeline.py --stage video --checkpoint <model.pt>
+  python microtaur_study/pipeline.py --robot yaw --name y5 --train-only   # teacher + student only (cluster: no cameras),
+                                                                          # evaluate later with --stage eval
 
 Every step runs as its own Python process (Isaac Sim holds one environment per process). Outputs, under --runs
 (default ./runs):
@@ -15,10 +17,12 @@ Every step runs as its own Python process (Isaac Sim holds one environment per p
                                                            tensorboard events (tensorboard --logdir runs/logs)
   runs/<name>/progress.md                                  early-checkpoint gait checks while the teacher trains
   runs/<name>/<label>/                                     eval of one checkpoint: gait.json, terrain_eval.log,
-                                                           c_posture.txt, turn_legs_*.txt, videos/*.mp4, crop png
+                                                           c_posture.txt, turn_legs_*.txt, spine_turn_*.txt / png,
+                                                           videos/*.mp4, crop png
   runs/<name>/summary.md                                   the numbers of every evaluated checkpoint + video paths
 The recipe (reward weights, command curriculum, student settings) is the one of the best runs so far (t4 / v4c,
-y1); change it in TEACHER_RECIPE / STUDENT_RECIPE below or append Hydra overrides with --override.
+y3 / r5), the same for both robots, including the motor-energy ramp (final weight ENERGY_WEIGHT); change it in
+TEACHER_RECIPE / STUDENT_RECIPE below or append Hydra overrides with --override (a later override of a key wins).
 """
 
 from __future__ import annotations
@@ -35,6 +39,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPTS = HERE / "scripts"
+sys.path.insert(0, str(HERE / "src"))
+from microtaur_common.task_params import energy_weight_stages  # noqa: E402  (pure python, no simulator)
+
 PY = sys.executable
 EXPERIMENT = "microtaur_isaac_teacher"  # teacher and student runs both log here (the student loads its teacher by run name)
 
@@ -47,7 +54,9 @@ STUDENT_AGENT = "rsl_rl_student_v2_small_cfg_entry_point"  # MLP student, 15-fra
 STAGES_CMD = ("[{step:0,lin_vel_x:[0.10,0.20],ang_vel_z:[-0.25,0.25],standing:0.0},"
               "{step:4000,lin_vel_x:[0.10,0.30],ang_vel_z:[-0.25,0.25],standing:0.0},"
               "{step:10000,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0}]")
-TEACHER_RECIPE = [  # t4 / y1 (Hydra overrides of the env cfg)
+ENERGY_WEIGHT = -0.002  # final motor_energy weight, both robots (y3 / r5; the env defaults are yaw -0.005, rigid 0)
+STAGES_ENERGY = "[" + ",".join(f"{{step:{s['step']},weight:{round(s['weight'], 6)!r}}}" for s in energy_weight_stages(ENERGY_WEIGHT)) + "]"
+TEACHER_RECIPE = [  # t4 / y3 / r5 (Hydra overrides of the env cfg)
   "env.rewards.action_rate.weight=-0.08", "env.rewards.trot_gait.weight=2.0", "env.rewards.trot_gait.params.std=0.1",
   "env.rewards.trot_gait.params.max_err=0.2", "env.rewards.track_lin_vel_xy.params.sigma=0.07",
   "env.rewards.feet_air_time.weight=1.0", "env.rewards.feet_air_time.params.mode_time_s=0.2",
@@ -55,6 +64,7 @@ TEACHER_RECIPE = [  # t4 / y1 (Hydra overrides of the env cfg)
   "env.rewards.heading_tracking.weight=1.0", "env.commands.twist.rel_straight_envs=0.3",
   f"env.curriculum.command_ranges.params.stages={STAGES_CMD}", "env.commands.twist.ranges.ang_vel_z=[-0.25,0.25]",
   "env.curriculum.reward_schedule.params.stages=['9600|flat_orientation_l2.weight=-10.0|track_lin_vel_xy.sigma=0.12']",
+  f"env.curriculum.energy_weight.params.stages={STAGES_ENERGY}",
 ]
 STUDENT_RECIPE = [  # v4c / y1s
   "env.c_reverse_frac=0.5", "env.commands.twist.rel_straight_envs=0.3", "env.commands.twist.ranges.ang_vel_z=[-0.25,0.25]",
@@ -216,7 +226,8 @@ class Pipeline:
     return ok
 
   def evaluate(self, ck: Path, label: str, out: Path) -> Path:
-    """Gait, terrain (A / B / C, all levels), C step posture, turning + virtual legs, videos; summary appended."""
+    """Gait, terrain (A / B / C, all levels), C step posture, turning + virtual legs, tight-turn S tours with the
+    spine free / locked, videos; summary appended."""
     d = out / label
     vid = d / "videos"
     vid.mkdir(parents=True, exist_ok=True)
@@ -229,6 +240,8 @@ class Pipeline:
          d / "c_posture" / "c_posture.txt")
     step([PY, SCRIPTS / "isaac_turn_legs.py", "--checkpoint", ck, "--label", label, "--out", d], d / "turn_legs.log", self.runs, 1800,
          d / f"turn_legs_{label}.txt")
+    step([PY, SCRIPTS / "isaac_spine_turn.py", "--checkpoint", ck, "--label", label, "--out", d, "--envs-per-group", 2 if self.smoke else 12],
+         d / "spine_turn.log", self.runs, 1800, d / f"spine_turn_{label}.txt")
     steps = 40 if self.smoke else 420
     for env, name, eye, look in TERRAIN_VIDEOS:
       self.video(ck, vid / f"{label}_{name}.mp4", env=env, steps=steps, eye=eye, lookat=look)
@@ -247,6 +260,8 @@ class Pipeline:
              "", "**Terrain (straight 0.20 m/s, 20 s):**", "```", read(d / "terrain_eval.log"), "```",
              "**C step posture:**", "```", read(d / "c_posture" / "c_posture.txt"), "```",
              "**Turning + virtual legs:**", "```", read(d / f"turn_legs_{label}.txt"), "```",
+             f"**Tight turns, S tours (spine free / locked; plot `{d / f'spine_turn_{label}.png'}`):**", "```",
+             read(d / f"spine_turn_{label}.txt"), "```",
              "**Videos:** " + ", ".join(f"`{p}`" for p in sorted((d / "videos").glob("*.mp4"))), ""]
     with open(out / "summary.md", "a") as fh:
       fh.write("\n".join(lines) + "\n")
@@ -255,7 +270,7 @@ class Pipeline:
   def teacher(self, name: str) -> Path:
     iters = 3 if self.smoke else self.a.iters
     return self.train(TASKS[self.a.robot][0], name, iters, TEACHER_AGENT, TEACHER_RECIPE + self.a.override, [],
-                      self.runs / name, watch=not self.smoke)
+                      self.runs / name, watch=not (self.smoke or self.a.train_only))
 
   def student(self, name: str, teacher_ck: Path) -> Path:
     teacher_ck = teacher_ck.resolve()
@@ -295,6 +310,8 @@ def main():
   ap.add_argument("--override", nargs="*", default=[], help="extra Hydra overrides for the teacher, e.g. env.rewards.trot_gait.weight=1.5")
   ap.add_argument("--override-student", nargs="*", default=[], help="extra Hydra overrides for the student")
   ap.add_argument("--smoke", action="store_true", help="install check: 3 teacher / 2 student iterations, 256 envs, short evals")
+  ap.add_argument("--train-only", action="store_true",
+                  help="teacher + student training only: no early gait checks, evaluations, videos or bundle (cluster jobs)")
   a = ap.parse_args()
   if a.smoke:
     a.num_envs = min(a.num_envs, 256)
@@ -319,13 +336,15 @@ def main():
   teacher_ck = Path(a.teacher_ckpt) if a.teacher_ckpt else None
   if a.stage in ("all", "teacher"):
     teacher_ck = P.teacher(name)
-    P.evaluate(teacher_ck, f"{name}_teacher", out)
+    if not a.train_only:
+      P.evaluate(teacher_ck, f"{name}_teacher", out)
   if a.stage in ("all", "student"):
     if teacher_ck is None:
       raise SystemExit("--stage student needs --teacher-ckpt")
     student_ck = P.student(name, teacher_ck)
-    P.evaluate(student_ck, f"{name}_student", out)
-    P.bundle(student_ck, out)
+    if not a.train_only:
+      P.evaluate(student_ck, f"{name}_student", out)
+      P.bundle(student_ck, out)
   log(f"DONE: {out / 'summary.md'}", out / "progress.md")
 
 
