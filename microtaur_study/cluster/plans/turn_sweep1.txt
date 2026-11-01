@@ -1,0 +1,21 @@
+# Turn sweep 1 (2026-11-01). Base = y4 / r6 (running locally, seed 42): pipeline default recipe (energy -0.002) +
+# tight-turn commands (stage 3 at it 312: vx 0..0.35, yaw +-0.8) + yaw-rate tracking weight 1.5. One change per arm,
+# the same for both robots.
+= env.curriculum.command_ranges.params.stages=[{step:0,lin_vel_x:[0.10,0.20],ang_vel_z:[-0.25,0.25],standing:0.0},{step:4000,lin_vel_x:[0.10,0.30],ang_vel_z:[-0.25,0.25],standing:0.0},{step:10000,lin_vel_x:[0.0,0.35],ang_vel_z:[-0.8,0.8],standing:0.0}] env.rewards.track_ang_vel_z.weight=1.5
+# A: replicate the base (seeds 43, 44)
+ts1_y_s43 yaw seed=43
+ts1_r_s43 rigid seed=43
+ts1_y_s44 yaw seed=44
+ts1_r_s44 rigid seed=44
+# B: yaw-rate tracking weight 3.0
+ts1_y_w3 yaw env.rewards.track_ang_vel_z.weight=3.0
+ts1_r_w3 rigid env.rewards.track_ang_vel_z.weight=3.0
+# C: wider yaw-rate kernel (sigma 0.10 -> 0.20 rad/s: gradient when far from the command)
+ts1_y_sig2 yaw env.rewards.track_ang_vel_z.params.sigma=0.2
+ts1_r_sig2 rigid env.rewards.track_ang_vel_z.params.sigma=0.2
+# D: no foot-slide penalty (feet_slide -0.1 -> 0; legs-only turning needs lateral slip)
+ts1_y_noslip yaw env.rewards.feet_slide.weight=0.0
+ts1_r_noslip rigid env.rewards.feet_slide.weight=0.0
+# E: no motor-energy cost (does the energy cost push the turning onto the spine?)
+ts1_y_e0 yaw env.curriculum.energy_weight.params.stages=[{step:0,weight:0.0},{step:7360,weight:0.0},{step:8320,weight:0.0},{step:9280,weight:0.0},{step:10240,weight:0.0},{step:11200,weight:0.0},{step:12160,weight:0.0},{step:13120,weight:0.0},{step:14080,weight:0.0},{step:15040,weight:0.0},{step:16000,weight:0.0}]
+ts1_r_e0 rigid env.curriculum.energy_weight.params.stages=[{step:0,weight:0.0},{step:7360,weight:0.0},{step:8320,weight:0.0},{step:9280,weight:0.0},{step:10240,weight:0.0},{step:11200,weight:0.0},{step:12160,weight:0.0},{step:13120,weight:0.0},{step:14080,weight:0.0},{step:15040,weight:0.0},{step:16000,weight:0.0}]
