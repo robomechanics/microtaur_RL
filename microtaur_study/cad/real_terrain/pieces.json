@@ -1,0 +1,151 @@
+{
+ "tile_cells": [
+  90,
+  50
+ ],
+ "cell_mm": 70.0,
+ "b_window_x_from_tile_centre_m": [
+  -0.25,
+  1.75
+ ],
+ "pieces": [
+  {
+   "piece": "B_lv1",
+   "sim_ground_above_bottom_mm": 5.529766643419862,
+   "top_min_mm": 3.0,
+   "top_max_mm": 8.924749886617064,
+   "height_about_sim_ground_mm": [
+    -2.529766643419862,
+    3.3949832431972027
+   ],
+   "cells": [
+    29,
+    16
+   ],
+   "triangles": 4992
+  },
+  {
+   "piece": "B_lv2",
+   "sim_ground_above_bottom_mm": 8.059533286839724,
+   "top_min_mm": 2.999999999999999,
+   "top_max_mm": 14.849499773234129,
+   "height_about_sim_ground_mm": [
+    -5.059533286839724,
+    6.789966486394405
+   ],
+   "cells": [
+    29,
+    16
+   ],
+   "triangles": 4992
+  },
+  {
+   "piece": "B_lv3",
+   "sim_ground_above_bottom_mm": 10.589299697428942,
+   "top_min_mm": 2.999999999999999,
+   "top_max_mm": 20.774249892681837,
+   "height_about_sim_ground_mm": [
+    -7.589299697428942,
+    10.184950195252895
+   ],
+   "cells": [
+    29,
+    16
+   ],
+   "triangles": 4992
+  },
+  {
+   "piece": "B_lv4",
+   "sim_ground_above_bottom_mm": 13.119066573679447,
+   "top_min_mm": 2.999999999999999,
+   "top_max_mm": 26.698999546468258,
+   "height_about_sim_ground_mm": [
+    -10.119066573679447,
+    13.57993297278881
+   ],
+   "cells": [
+    29,
+    16
+   ],
+   "triangles": 4992
+  },
+  {
+   "piece": "B_lv5",
+   "sim_ground_above_bottom_mm": 15.648832984268665,
+   "top_min_mm": 2.999999999999999,
+   "top_max_mm": 32.623749665915966,
+   "height_about_sim_ground_mm": [
+    -12.648832984268665,
+    16.9749166816473
+   ],
+   "cells": [
+    29,
+    16
+   ],
+   "triangles": 4992
+  },
+  {
+   "piece": "B_lv6",
+   "sim_ground_above_bottom_mm": 18.178599394857883,
+   "top_min_mm": 2.999999999999999,
+   "top_max_mm": 38.548499785363674,
+   "height_about_sim_ground_mm": [
+    -15.178599394857883,
+    20.36990039050579
+   ],
+   "cells": [
+    29,
+    16
+   ],
+   "triangles": 4992
+  },
+  {
+   "piece": "C_lv1",
+   "sim_ground_above_bottom_mm": 3.0,
+   "step_mm": 6.133333333333333,
+   "top_min_mm": 3.0,
+   "top_max_mm": 9.133333333333333,
+   "triangles": 24
+  },
+  {
+   "piece": "C_lv2",
+   "sim_ground_above_bottom_mm": 3.0,
+   "step_mm": 12.266666666666666,
+   "top_min_mm": 3.0,
+   "top_max_mm": 15.266666666666664,
+   "triangles": 24
+  },
+  {
+   "piece": "C_lv3",
+   "sim_ground_above_bottom_mm": 3.0,
+   "step_mm": 18.4,
+   "top_min_mm": 3.0,
+   "top_max_mm": 21.4,
+   "triangles": 24
+  },
+  {
+   "piece": "C_lv4",
+   "sim_ground_above_bottom_mm": 3.0,
+   "step_mm": 24.53333333333333,
+   "top_min_mm": 3.0,
+   "top_max_mm": 27.53333333333333,
+   "triangles": 24
+  },
+  {
+   "piece": "C_lv5",
+   "sim_ground_above_bottom_mm": 3.0,
+   "step_mm": 30.666666666666668,
+   "top_min_mm": 3.0,
+   "top_max_mm": 33.66666666666667,
+   "triangles": 24
+  },
+  {
+   "piece": "C_lv6",
+   "sim_ground_above_bottom_mm": 3.0,
+   "step_mm": 36.8,
+   "top_min_mm": 3.0,
+   "top_max_mm": 39.800000000000004,
+   "triangles": 24
+  }
+ ]
+}
