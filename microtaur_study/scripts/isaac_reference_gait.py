@@ -140,11 +140,12 @@ for T in args.periods:
     d = robot.data
     rec["vx"].append(float(d.root_link_lin_vel_b[:, 0].mean())); rec["wz"].append(float(d.root_link_ang_vel_b[:, 2].mean()))
     rec["z"].append(float((d.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2]).mean()))
-    rec["g"].append(d.projected_gravity_b[0].cpu().numpy())
-    rec["root_pos"].append((d.root_link_pos_w[0] - env.scene.env_origins[0]).cpu().numpy())
-    rec["root_quat_wxyz"].append(d.root_link_quat_w[0].cpu().numpy()); rec["joint_pos"].append(d.joint_pos[0].cpu().numpy())
+    # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+    rec["g"].append(d.projected_gravity_b[0].cpu().numpy().copy())
+    rec["root_pos"].append((d.root_link_pos_w[0] - env.scene.env_origins[0]).cpu().numpy().copy())
+    rec["root_quat_wxyz"].append(d.root_link_quat_w[0].cpu().numpy().copy()); rec["joint_pos"].append(d.joint_pos[0].cpu().numpy().copy())
     c, air, con = foot_contact_timers(env, feet)
-    rec["contact"].append(c[0].cpu().numpy()); rec["air"].append(air.cpu().numpy()); rec["con"].append(con.cpu().numpy())
+    rec["contact"].append(c[0].cpu().numpy().copy()); rec["air"].append(air.cpu().numpy().copy()); rec["con"].append(con.cpu().numpy().copy())
   rates = {n: v / n_meas for n, v in sums.items()}
   g = np.array(rec["g"]); tilt = np.degrees(np.arcsin(np.clip(np.linalg.norm(g[:, :2], axis=1), 0, 1)))
   qmax = np.abs((np.array([targets(k * dt, T, L, args.lift_mm * 1e-3) for k in range(int(T / dt) + 1)]) - stand)).max()

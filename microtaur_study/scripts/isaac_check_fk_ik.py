@@ -157,10 +157,11 @@ if not args.maths_only:
       q = d.joint_pos[:, mids].double()
       fx, fz = K.forward_torch(q[:, 0::2], q[:, 1::2])
       pred = torch.stack((fx.float(), lat.expand(N, 4), fz.float()), dim=-1)
-      E.append((rel - pred).cpu().numpy())
-      C.append(foot_contact_timers(env, fc)[0].cpu().numpy())
-      R.append(torch.hypot(fx, fz).cpu().numpy())
-      TH.append(torch.atan2(fx, -fz).cpu().numpy())
+      # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+      E.append((rel - pred).cpu().numpy().copy())
+      C.append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
+      R.append(torch.hypot(fx, fz).cpu().numpy().copy())
+      TH.append(torch.atan2(fx, -fz).cpu().numpy().copy())
   E, C, R, TH = map(np.stack, (E, C, R, TH))
   ok = (t.terrain_types < 2).cpu().numpy()  # A columns (flat) only
   e, c = E[:, ok], C[:, ok].astype(bool)

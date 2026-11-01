@@ -85,11 +85,12 @@ with torch.inference_mode():
     if k < 60:
       continue
     rec["c"].append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
-    rec["z"].append(cur[..., 2].cpu().numpy())
-    rec["v"].append(v.cpu().numpy())
-    rec["q"].append(robot.data.joint_pos[:, mids].cpu().numpy())
-    rec["vx"].append(robot.data.root_link_lin_vel_b[:, 0].cpu().numpy())
-    rec["done"].append(dones.cpu().numpy())
+    # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+    rec["z"].append(cur[..., 2].cpu().numpy().copy())
+    rec["v"].append(v.cpu().numpy().copy())
+    rec["q"].append(robot.data.joint_pos[:, mids].cpu().numpy().copy())
+    rec["vx"].append(robot.data.root_link_lin_vel_b[:, 0].cpu().numpy().copy())
+    rec["done"].append(dones.cpu().numpy().copy())
 R = {k: np.stack(v) for k, v in rec.items()}
 KIN = MicrotaurFiveBarKinematics()
 types = TR.env_terrain_type_ids(t).cpu().numpy()

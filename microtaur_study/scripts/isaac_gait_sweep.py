@@ -57,9 +57,10 @@ for spec in args.ckpts:
       if k < 60: continue
       C.append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
       RW.append(rm._step_reward.cpu().numpy().copy())
-      Z.append(robot.data.root_link_pos_w[:, 2].cpu().numpy()); VX.append(robot.data.root_link_lin_vel_b[:, 0].cpu().numpy())
-      av = robot.data.root_link_ang_vel_b; RR.append(av[:, 0].cpu().numpy()); PR.append(av[:, 1].cpu().numpy())
-      D.append(dones.cpu().numpy())
+      # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+      Z.append(robot.data.root_link_pos_w[:, 2].cpu().numpy().copy()); VX.append(robot.data.root_link_lin_vel_b[:, 0].cpu().numpy().copy())
+      av = robot.data.root_link_ang_vel_b; RR.append(av[:, 0].cpu().numpy().copy()); PR.append(av[:, 1].cpu().numpy().copy())
+      D.append(dones.cpu().numpy().copy())
   C, RW, Z, VX, RR, PR, D = map(np.stack, (C, RW, Z, VX, RR, PR, D))
   ok = ~D.any(0)
   c = C[:, ok].astype(float); nf = c.sum(2)

@@ -115,8 +115,9 @@ def run(interp: bool):
       obs, _, dones, _ = w.step(policy(obs))
       if k >= 60:
         C.append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
-        VX.append(robot.data.root_link_lin_vel_b[:, 0].cpu().numpy())
-        D.append(dones.cpu().numpy())
+        # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+        VX.append(robot.data.root_link_lin_vel_b[:, 0].cpu().numpy().copy())
+        D.append(dones.cpu().numpy().copy())
   R = {k: np.stack(v) for k, v in rec.items()}
   C, VX, D = np.stack(C).astype(float), np.stack(VX), np.stack(D)
   ok = ~D.any(0)

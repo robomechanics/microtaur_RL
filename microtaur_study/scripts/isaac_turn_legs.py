@@ -85,14 +85,15 @@ with torch.inference_mode():
     d = robot.data
     q = d.joint_pos[:, mids].double()
     fx, fz = K.forward_torch(q[:, 0::2], q[:, 1::2])
-    rec["wz"].append(d.root_link_ang_vel_b[:, 2].cpu().numpy())
-    rec["vx"].append(d.root_link_lin_vel_b[:, 0].cpu().numpy())
-    rec["spine"].append(d.joint_pos[:, sid].cpu().numpy() if yaw else np.zeros(env.num_envs))
-    rec["r"].append(torch.hypot(fx, fz).cpu().numpy())
-    rec["th"].append(torch.atan2(fx, -fz).cpu().numpy())
-    rec["c"].append(foot_contact_timers(env, fc)[0].cpu().numpy())
-    rec["z"].append((d.root_link_pos_w[:, 2] - t.env_origins[:, 2]).cpu().numpy())
-    rec["done"].append(dones.cpu().numpy())
+    # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+    rec["wz"].append(d.root_link_ang_vel_b[:, 2].cpu().numpy().copy())
+    rec["vx"].append(d.root_link_lin_vel_b[:, 0].cpu().numpy().copy())
+    rec["spine"].append(d.joint_pos[:, sid].cpu().numpy().copy() if yaw else np.zeros(env.num_envs))
+    rec["r"].append(torch.hypot(fx, fz).cpu().numpy().copy())
+    rec["th"].append(torch.atan2(fx, -fz).cpu().numpy().copy())
+    rec["c"].append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
+    rec["z"].append((d.root_link_pos_w[:, 2] - t.env_origins[:, 2]).cpu().numpy().copy())
+    rec["done"].append(dones.cpu().numpy().copy())
 R = {k: np.stack(v) for k, v in rec.items()}
 seg = np.array(seg_of)
 alive = (np.cumsum(R["done"], axis=0) == 0) & A[None]  # [T, N]

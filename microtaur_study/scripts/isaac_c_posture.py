@@ -88,12 +88,13 @@ with torch.inference_mode():
     g = d.projected_gravity_b
     rel = d.body_link_pos_w[:, fids] - d.root_link_pos_w[:, None]
     fy = quat_apply_inverse(d.root_link_quat_w[:, None].expand(-1, 4, -1).reshape(-1, 4), rel.reshape(-1, 3)).reshape(N, 4, 3)[..., 1]
-    rec["q"].append(d.joint_pos[:, mids].cpu().numpy())
+    # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+    rec["q"].append(d.joint_pos[:, mids].cpu().numpy().copy())
     rec["c"].append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
-    rec["x"].append((d.root_link_pos_w[:, 0] - t.env_origins[:, 0]).cpu().numpy())
-    rec["roll"].append(torch.rad2deg(torch.atan2(-g[:, 1], -g[:, 2])).cpu().numpy())  # + = left side up
-    rec["fy"].append(fy.cpu().numpy())
-    rec["done"].append(dones.cpu().numpy())
+    rec["x"].append((d.root_link_pos_w[:, 0] - t.env_origins[:, 0]).cpu().numpy().copy())
+    rec["roll"].append(torch.rad2deg(torch.atan2(-g[:, 1], -g[:, 2])).cpu().numpy().copy())  # + = left side up
+    rec["fy"].append(fy.cpu().numpy().copy())
+    rec["done"].append(dones.cpu().numpy().copy())
 R = {k: np.stack(v) for k, v in rec.items()}
 KIN = five_bar_for(cfg.variant == "yaw")
 x0, x1 = TR.C_STEP_X_RANGE

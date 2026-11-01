@@ -81,10 +81,11 @@ with torch.inference_mode():
     d = robot.data
     c, a = d.computed_torque[:, mids], d.applied_torque[:, mids]
     if k >= 40:
-      SAT.append(((c - a).abs() > 1e-5).float().cpu().numpy())
-      TQ.append(a.abs().cpu().numpy())
-      VX.append(d.root_link_lin_vel_b[:, 0].cpu().numpy())
-      DN.append(dones.cpu().numpy())
+      # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+      SAT.append(((c - a).abs() > 1e-5).float().cpu().numpy().copy())
+      TQ.append(a.abs().cpu().numpy().copy())
+      VX.append(d.root_link_lin_vel_b[:, 0].cpu().numpy().copy())
+      DN.append(dones.cpu().numpy().copy())
 SAT, TQ, VX, DN = map(np.stack, (SAT, TQ, VX, DN))
 types = TR.env_terrain_type_ids(t).cpu().numpy()
 lv = t.terrain_levels.cpu().numpy()

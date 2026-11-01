@@ -125,19 +125,20 @@ with torch.inference_mode():
     cmd.vel_command_b[:] = c  # takes effect in the next observation
     o = obs["student"]
     d = robot.data
-    rec["obs"].append(o.cpu().numpy())
-    rec["q"].append(d.joint_pos[:, mids].cpu().numpy()); rec["qd"].append(d.joint_vel[:, mids].cpu().numpy())
-    rec["gravity"].append(d.projected_gravity_b.cpu().numpy()); rec["ang_vel"].append(d.root_link_ang_vel_b.cpu().numpy())
-    rec["command"].append(obs_cmd.cpu().numpy())
+    # .copy(): with CPU physics .cpu() is a no-op and numpy would alias the reused PhysX buffer
+    rec["obs"].append(o.cpu().numpy().copy())
+    rec["q"].append(d.joint_pos[:, mids].cpu().numpy().copy()); rec["qd"].append(d.joint_vel[:, mids].cpu().numpy().copy())
+    rec["gravity"].append(d.projected_gravity_b.cpu().numpy().copy()); rec["ang_vel"].append(d.root_link_ang_vel_b.cpu().numpy().copy())
+    rec["command"].append(obs_cmd.cpu().numpy().copy())
     off = 0
     for n in STUDENT_TERMS:  # current frame = the last of the term's H frames (term-major layout)
-      frames[n].append(o[:, off + (H - 1) * sizes[n]: off + H * sizes[n]].cpu().numpy())
+      frames[n].append(o[:, off + (H - 1) * sizes[n]: off + H * sizes[n]].cpu().numpy().copy())
       off += H * sizes[n]
     a = act(obs)
-    rec["raw_action"].append(a.cpu().numpy())
+    rec["raw_action"].append(a.cpu().numpy().copy())
     obs, _, dones, _ = w.step(a)
-    rec["target_safe"].append(core.safe.cpu().numpy())
-    rec["done"].append(dones.cpu().numpy())
+    rec["target_safe"].append(core.safe.cpu().numpy().copy())
+    rec["done"].append(dones.cpu().numpy().copy())
 R = {k: np.stack(v) for k, v in rec.items()}
 F = {n: np.stack(v) for n, v in frames.items()}
 golden = {"dt": np.float64(env.step_dt), "history": np.int64(H), "terms": np.array(STUDENT_TERMS)}
