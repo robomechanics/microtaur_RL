@@ -163,6 +163,15 @@ def hard_terrain_placement(env, env_ids) -> None:
   terrain.env_origins[:] = terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
 
 
+def set_step_counter(env, env_ids, step: int) -> None:
+  """Startup: start env.common_step_counter at `step` (0: no-op). For resuming a run from model_N.pt with
+  --resume: step = N x 32 (policy steps per iteration) puts every step-based curriculum (command ranges, energy ramp,
+  reward schedule, terrain-level unlock) where it was. IsaacLab zeroes the counter before the startup events run."""
+  del env_ids
+  if int(step) > 0:
+    env.common_step_counter = int(step)
+
+
 def init_terrain_levels(env, env_ids, level_range: tuple[int, int]) -> None:
   """Startup: every env's initial terrain level uniform in [lo, hi] (IsaacLab can only give 0..max),
   e.g. (1, 2) = easy but not flat. The curriculum takes over from there."""
@@ -232,6 +241,8 @@ class MicrotaurSceneCfg(InteractiveSceneCfg):
 def _events(stage, play: bool, rough: bool, root_body: str = ROOT_BODY_NAME, num_motors: int = 8) -> dict[str, EventTermCfg]:
   ev = {
     "terrain_flags": EventTermCfg(func=terrain_flags, mode="startup"),
+    # resume a run: env.events.resume_step.params.step=<N x 32> (pipeline.py --resume model_N.pt sets it)
+    "resume_step": EventTermCfg(func=set_step_counter, mode="startup", params={"step": 0}),
     "ik_consistent_reset": EventTermCfg(func=E.ik_consistent_reset, mode="reset",
                                         params={"randomize": not play, "spawn_fn": terrain_spawn}),
   }

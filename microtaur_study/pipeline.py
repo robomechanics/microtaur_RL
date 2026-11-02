@@ -40,7 +40,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SCRIPTS = HERE / "scripts"
 sys.path.insert(0, str(HERE / "src"))
-from microtaur_common.task_params import energy_weight_stages  # noqa: E402  (pure python, no simulator)
+from microtaur_common.task_params import STEPS_PER_ITER, energy_weight_stages  # noqa: E402  (pure python)
 
 PY = sys.executable
 EXPERIMENT = "microtaur_isaac_teacher"  # teacher and student runs both log here (the student loads its teacher by run name)
@@ -137,7 +137,10 @@ class Pipeline:
 
   # ------------------------------------------------------------------ training
   def train(self, task: str, run_name: str, iters: int, agent: str, overrides: list, extra: list, out: Path,
-            watch: bool) -> Path:
+            watch: bool, final_iter: int | None = None) -> Path:
+    """Run iters iterations; the run is done when model_<final_iter> exists (default iters - 1; a resumed run
+    continues the iteration count of its checkpoint)."""
+    final = iters - 1 if final_iter is None else final_iter
     out.mkdir(parents=True, exist_ok=True)
     trainlog = out / f"train_{run_name}.log"
     cmd = [PY, SCRIPTS / "isaac_train.py", "--task", task, "--num_envs", self.a.num_envs, "--headless",
@@ -147,7 +150,7 @@ class Pipeline:
     t0 = time.time()
     p = subprocess.Popen([str(c) for c in cmd], stdout=fh, stderr=subprocess.STDOUT, cwd=self.runs, env=env_vars(),
                          start_new_session=True)
-    last = f"model_{iters - 1}.pt"
+    last = f"model_{final}.pt"
     run_dir, checked = None, set()
     try:
       while True:
@@ -168,7 +171,7 @@ class Pipeline:
         if watch and run_dir is not None:
           for n in CHECK_AT:
             ck = run_dir / f"model_{n}.pt"
-            if n < iters - 1 and n not in checked and ck.exists():
+            if n < final and n not in checked and ck.exists():
               checked.add(n)
               time.sleep(3)
               g = self.gait(ck, f"{run_name}_{n}", out / "early_checks")
@@ -269,8 +272,20 @@ class Pipeline:
   # ------------------------------------------------------------------ stages
   def teacher(self, name: str) -> Path:
     iters = 3 if self.smoke else self.a.iters
-    return self.train(TASKS[self.a.robot][0], name, iters, TEACHER_AGENT, TEACHER_RECIPE + self.a.override, [],
-                      self.runs / name, watch=not (self.smoke or self.a.train_only))
+    if not self.a.resume:
+      return self.train(TASKS[self.a.robot][0], name, iters, TEACHER_AGENT, TEACHER_RECIPE + self.a.override, [],
+                        self.runs / name, watch=not (self.smoke or self.a.train_only))
+    # resume from model_N.pt: rsl_rl repeats iteration N, so iters - N more end at model_<iters - 1>; the step
+    # counter starts at N x STEPS_PER_ITER so every step-based curriculum continues where it was
+    ck = Path(self.a.resume).resolve()
+    n = int(ck.stem.split("_")[-1])
+    if ck.parent.parent != self.logs or not 0 < n < iters - 1:
+      raise SystemExit(f"--resume: need a model_N.pt (0 < N < {iters - 1}) of a run under {self.logs}")
+    log(f"resume {name} from {ck} (iteration {n}, step counter {n * STEPS_PER_ITER})", self.runs / name / "progress.md")
+    return self.train(TASKS[self.a.robot][0], name, iters - n, TEACHER_AGENT,
+                      TEACHER_RECIPE + self.a.override + [f"env.events.resume_step.params.step={n * STEPS_PER_ITER}"],
+                      ["--resume", "--load_run", ck.parent.name, "--checkpoint", ck.name], self.runs / name,
+                      watch=not (self.smoke or self.a.train_only), final_iter=iters - 1)
 
   def student(self, name: str, teacher_ck: Path) -> Path:
     teacher_ck = teacher_ck.resolve()
@@ -310,6 +325,8 @@ def main():
   ap.add_argument("--override", nargs="*", default=[], help="extra Hydra overrides for the teacher, e.g. env.rewards.trot_gait.weight=1.5")
   ap.add_argument("--override-student", nargs="*", default=[], help="extra Hydra overrides for the student")
   ap.add_argument("--smoke", action="store_true", help="install check: 3 teacher / 2 student iterations, 256 envs, short evals")
+  ap.add_argument("--resume", metavar="MODEL_N_PT", help="--stage teacher / all: continue that teacher run from "
+                  "model_N.pt to --iters (same name and overrides as the original run)")
   ap.add_argument("--train-only", action="store_true",
                   help="teacher + student training only: no early gait checks, evaluations, videos or bundle (cluster jobs)")
   a = ap.parse_args()
