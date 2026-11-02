@@ -1,0 +1,6 @@
+# Batch 2 (2026-11-01, Ben: experiment): success-gated terrain curriculum. Base = y4 / r6 (seed 42, local, time
+# gate): pipeline default recipe (energy -0.002) + tight-turn commands + yaw-rate tracking weight 1.5. Only change:
+# each terrain type's level cap unlocks when the episodes ending at it succeed >= 80 % (not 300 iterations per level).
+= env.curriculum.command_ranges.params.stages=[{step:0,lin_vel_x:[0.10,0.20],ang_vel_z:[-0.25,0.25],standing:0.0},{step:4000,lin_vel_x:[0.10,0.30],ang_vel_z:[-0.25,0.25],standing:0.0},{step:10000,lin_vel_x:[0.0,0.35],ang_vel_z:[-0.8,0.8],standing:0.0}] env.rewards.track_ang_vel_z.weight=1.5 env.curriculum.terrain_levels.params.gate=success
+ts2_y_gate yaw
+ts2_r_gate rigid

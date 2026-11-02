@@ -120,34 +120,55 @@ def terrain_levels_from_spawn(env, env_ids, command_name: str = "twist") -> torc
 
 def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_frac: float = 0.8,
                             demote_frac: float = 0.4, steps_per_level: int = 300 * 32,
-                            min_level: int = 0) -> torch.Tensor:
+                            min_level: int = 0, gate: str = "time", gate_success: float = 0.8,
+                            gate_min_episodes: int = 64, gate_min_iters: int = 20, gate_start_iter: int = 200):
   """Terrain curriculum on commanded distance (Teacher-Cur).
 
   Per episode the command term integrates the commanded path length and the body's
   progress along the commanded direction. ratio = progress / (mean commanded speed x
   full episode length), so a robot that falls early scores low. Promote one level if
-  ratio >= promote_frac, demote if < demote_frac. Levels above
-  common_step_counter // steps_per_level are locked (300 iterations x 32 steps per
-  level: only level 0 for the first 300 iterations, the top level from 300 x (L - 1)).
-  Robots at the unlocked cap stay there. Run-out rows past the last level are never
-  assigned."""
+  ratio >= promote_frac, demote if < demote_frac, up to the unlocked cap:
+    gate "time"     levels above common_step_counter // steps_per_level are locked (300 iterations x 32 steps
+                    per level: only level 0 for the first 300 iterations, the top level from 300 x (L - 1));
+    gate "success"  one cap per terrain type, raised when the episodes ending at it succeed (ratio >= promote_frac)
+                    at a rate >= gate_success (microtaur_common.curriculum.SuccessGate; not before gate_start_iter,
+                    then at most one level per gate_min_iters and gate_min_episodes episodes).
+  Robots at the unlocked cap stay there. Run-out rows past the last level are never assigned. Returns the mean
+  level (gate "time") or the mean level and the cap per terrain type (gate "success")."""
+  from microtaur_common.curriculum import SuccessGate, progress_levels
+  from microtaur_common.task_params import STEPS_PER_ITER
+
+  from . import TERRAIN_TYPES
   from . import terrains as TR
   terrain = env.scene.terrain
   if getattr(env, "microtaur_spawn_xy", None) is None:
     return torch.mean(terrain.terrain_levels.float())
   n_lv = TR.terrain_num_levels(terrain)
-  cap = min(n_lv - 1, max(min_level, int(env.common_step_counter) // steps_per_level))
+  step = int(env.common_step_counter)
   term = env.command_manager.get_term(command_name)
   elapsed = env.episode_length_buf[env_ids].float().clamp_min(1.0) * env.step_dt
   expected = term.cmd_distance[env_ids] / elapsed * env.max_episode_length_s
   ratio = term.cmd_progress[env_ids] / expected.clamp_min(1e-3)
   lv = terrain.terrain_levels[env_ids]
-  up = (ratio >= promote_frac) & (lv < cap)
-  down = ratio < demote_frac
-  lv = torch.clamp(lv + up.long() - down.long(), min_level, cap)  # min_level > 0: never back to flat
+  if gate == "success":
+    g = getattr(env, "microtaur_success_gate", None)
+    if g is None:
+      g = env.microtaur_success_gate = SuccessGate(
+        len(TERRAIN_TYPES), n_lv, env.device, start_level=min_level, success=gate_success,
+        min_episodes=gate_min_episodes,
+        min_steps=gate_min_iters * STEPS_PER_ITER, start_step=gate_start_iter * STEPS_PER_ITER)
+    types = TR.env_terrain_type_ids(terrain)[env_ids]
+    cap = g.update(step, types, lv, ratio >= promote_frac)[types]
+  else:
+    cap = torch.tensor(min(n_lv - 1, max(min_level, step // steps_per_level)), device=lv.device)
+  lv = progress_levels(lv, ratio, cap, promote_frac, demote_frac, min_level)  # min_level > 0: never back to flat
   terrain.terrain_levels[env_ids] = lv
   terrain.env_origins[env_ids] = terrain.terrain_origins[lv, terrain.terrain_types[env_ids]]
-  return torch.mean(terrain.terrain_levels.float())
+  mean = torch.mean(terrain.terrain_levels.float())
+  if gate != "success":
+    return mean
+  caps = env.microtaur_success_gate.cap
+  return {"mean": mean, **{f"cap_{n.split('_')[0]}": caps[i].float() for i, n in enumerate(TERRAIN_TYPES)}}
 
 
 def hard_terrain_placement(env, env_ids) -> None:
@@ -334,7 +355,11 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.curriculum.energy_weight = R.make_energy_curriculum_term(self.energy_target)
     if self.rough:
       self.curriculum.terrain_levels = (
-        CurriculumTermCfg(func=terrain_levels_progress, params={"steps_per_level": 300 * 32, "min_level": 0})
+        CurriculumTermCfg(func=terrain_levels_progress, params={
+          "steps_per_level": 300 * 32, "min_level": 0,
+          # gate "success": per-terrain cap unlocked by success at the cap (see terrain_levels_progress); the keys
+          # are listed here because IsaacLab's cfg update rejects new dict keys from Hydra
+          "gate": "time", "gate_success": 0.8, "gate_min_episodes": 64, "gate_min_iters": 20, "gate_start_iter": 200})
         if self.cur_terrain
         else CurriculumTermCfg(func=terrain_levels_from_spawn))
     if self.play:
