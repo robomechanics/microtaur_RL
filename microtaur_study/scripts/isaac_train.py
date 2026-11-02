@@ -34,9 +34,18 @@ def isaaclab_dir() -> Path:
 
 
 TRAIN = isaaclab_dir() / REL
+TRAIN_MIB_PER_ENV = 4900 / 2048  # measured: a 2048-env teacher or student takes ~4.9 GB (Kit + PhysX + torch)
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from microtaur_common.gpu import gpu_allows  # noqa: E402
+
+device = sys.argv[sys.argv.index("--device") + 1] if "--device" in sys.argv else "cuda:0"
+if device.startswith("cuda"):
+  n = int(sys.argv[sys.argv.index("--num_envs") + 1]) if "--num_envs" in sys.argv else 4096
+  if not gpu_allows(int(TRAIN_MIB_PER_ENV * n), f"a {n}-env training"):
+    sys.exit("isaac_train.py: refused, the GPU memory cap would be exceeded (one training at a time)")
 
 sys.path.insert(0, str(TRAIN.parent))  # train.py imports its sibling cli_args
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import microtaur_isaac  # noqa: E402,F401  (registers the gym tasks)
 
 sys.argv[0] = str(TRAIN)

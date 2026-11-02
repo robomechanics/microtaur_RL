@@ -44,6 +44,11 @@ AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 args.headless = True
 args.enable_cameras = True
+from microtaur_common.gpu import gpu_allows  # noqa: E402
+
+if not gpu_allows(2500, "a render (~2.5 GB, renderer + 10 envs)"):  # rendering always needs the GPU
+  print("SKIPPED_GPU_CAP", args.out, flush=True)
+  sys.exit(0)
 app = AppLauncher(args).app
 
 import imageio  # noqa: E402
