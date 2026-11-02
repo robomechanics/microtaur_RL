@@ -3,11 +3,12 @@
 Two rules:
   - Fallback: evaluations are small, so when the GPU is full (PhysX: "failed to allocate memory ... Unable to create
     scene") they run with CPU PhysX instead (48 envs x 300 steps of the gait sweep: ~20 s).
-  - Hard cap on OUR total GPU memory: Ben, 2026-11-01, "cap gpu ram at 5gb, hard cap until further notice". The cap
-    (MiB, as nvidia-smi / nvtop show it) is read from $MT_GPU_CAP_MIB or ~/.config/microtaur/gpu_cap_mib (no file
-    and no variable: no cap). "Ours" = GPU processes of this user whose command line contains "microtaur". A script
-    that would push our total over the cap runs its physics on the CPU (pick_device), skips rendering
-    (gpu_allows) or refuses to start a training (isaac_train.py).
+  - Hard cap on OUR total GPU memory: Ben, 2026-11-01, "cap gpu ram at 5gb, hard cap until further notice", shared
+    by all of this user's work on the machine (the spine and autofloat sessions together). The cap (MiB, as
+    nvidia-smi / nvtop show it) is read from $MT_GPU_CAP_MIB or ~/.config/microtaur/gpu_cap_mib (no file and no
+    variable: no cap). "Ours" = every GPU process of this user. A script that would push our total over the cap runs
+    its physics on the CPU (pick_device), skips rendering (gpu_allows) or refuses to start a training
+    (isaac_train.py).
 """
 
 from __future__ import annotations
@@ -48,12 +49,12 @@ def gpu_cap_mib() -> int | None:
 
 
 def our_gpu_mib() -> int:
-  """GPU memory of this user's microtaur processes (all GPUs)."""
+  """GPU memory of all this user's processes (all GPUs): the cap is shared by every project of the user."""
   me, total = getpass.getuser(), 0
   for row in _nvidia_smi("--query-compute-apps=pid,used_memory"):
     try:
       pid, mib = (int(v) for v in row.split(","))
-      if Path(f"/proc/{pid}").owner() == me and b"microtaur" in Path(f"/proc/{pid}/cmdline").read_bytes():
+      if Path(f"/proc/{pid}").owner() == me:
         total += mib
     except (ValueError, OSError):
       continue
