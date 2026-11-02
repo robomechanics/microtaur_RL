@@ -114,7 +114,11 @@ def motor_energy(
   """Electrical power as cost of transport at ref_speed_m_s (positive; the
   curriculum's weight is negative)."""
   mech, copper = motor_power_w(env, copper_w_per_nm2, asset_cfg)
-  return (mech + copper) / (mass_kg * GRAVITY * ref_speed_m_s)
+  # A step whose PhysX state blew up (finite but ~1e11 velocities; truncated by physics_unstable) costs nothing, as in
+  # the metrics: one such step scored ~-1e10 and blew up the critic (y4 it 1775: value loss 0.2 -> 79, a ~200-iteration
+  # collapse; yaw runs 53-119 iterations with value loss > 5, rigid 4-6).
+  ok = ~physics_unstable(env, UNSTABLE_LIN_VEL_M_S, UNSTABLE_ANG_VEL_RAD_S)
+  return torch.where(ok, (mech + copper) / (mass_kg * GRAVITY * ref_speed_m_s), torch.zeros_like(mech))
 
 
 def trot_gait(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, pairs, std: float, max_err: float) -> torch.Tensor:
