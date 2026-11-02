@@ -77,7 +77,8 @@ STUDENT_RECIPE = [  # v4c / y1s
   "env.curriculum.command_ranges.params.stages=[{step:0,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0},"
   "{step:1,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0},{step:2,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0}]",
 ]
-CHECK_AT = (50, 100, 200, 300, 500, 1000, 1500, 2000, 2500)  # early gait checks while the teacher trains
+CHECK_AT = (50, 100, 200, 300, 500, 1000, 1500, 2000, 2500)
+MASTERY_SETS = (("C_fwd", ("--terrain", "C")), ("C_rev", ("--terrain", "C", "--reverse")), ("B", ("--terrain", "B")))  # early gait checks while the teacher trains
 # terrain videos: (env index in the play scene, name, camera eye, look-at), relative to the robot
 TERRAIN_VIDEOS = [(0, "A_flat", (0.30, -0.45, 0.18), (0, 0, 0.04)), (5, "B_lvl6", (0.30, -0.45, 0.25), (0, 0, 0.02)),
                   (9, "C_lvl6", (-0.45, -0.18, 0.32), (0.25, 0, 0.0))]
@@ -230,7 +231,7 @@ class Pipeline:
 
   def evaluate(self, ck: Path, label: str, out: Path) -> Path:
     """Gait, terrain (A / B / C, all levels), C step posture, turning + virtual legs, tight-turn S tours with the
-    spine free / locked, videos; summary appended."""
+    spine free / locked, terrain mastery per level (C both directions, B), videos; summary appended."""
     d = out / label
     vid = d / "videos"
     vid.mkdir(parents=True, exist_ok=True)
@@ -245,6 +246,9 @@ class Pipeline:
          d / f"turn_legs_{label}.txt")
     step([PY, SCRIPTS / "isaac_spine_turn.py", "--checkpoint", ck, "--label", label, "--out", d, "--envs-per-group", 2 if self.smoke else 12],
          d / "spine_turn.log", self.runs, 1800, d / f"spine_turn_{label}.txt")
+    for tt, terrain in MASTERY_SETS:
+      step([PY, SCRIPTS / "isaac_terrain_mastery.py", "--checkpoint", ck, "--label", f"{label}_{tt}", "--out", d, *terrain,
+            "--envs-per-level", 3 if self.smoke else 30], d / f"mastery_{tt}.log", self.runs, 1800, d / f"mastery_{label}_{tt}.txt")
     steps = 40 if self.smoke else 420
     for env, name, eye, look in TERRAIN_VIDEOS:
       self.video(ck, vid / f"{label}_{name}.mp4", env=env, steps=steps, eye=eye, lookat=look)
@@ -265,6 +269,8 @@ class Pipeline:
              "**Turning + virtual legs:**", "```", read(d / f"turn_legs_{label}.txt"), "```",
              f"**Tight turns, S tours (spine free / locked; plot `{d / f'spine_turn_{label}.png'}`):**", "```",
              read(d / f"spine_turn_{label}.txt"), "```",
+             "**Terrain mastery (straight 0.20 m/s, 30 envs per level; success = no termination and >= 80 % of the commanded"
+             " distance; mastered = 100 %):**", "```", *(read(d / f"mastery_{label}_{tt}.txt") for tt, _ in MASTERY_SETS), "```",
              "**Videos:** " + ", ".join(f"`{p}`" for p in sorted((d / "videos").glob("*.mp4"))), ""]
     with open(out / "summary.md", "a") as fh:
       fh.write("\n".join(lines) + "\n")
