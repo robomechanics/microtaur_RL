@@ -4,13 +4,16 @@
       --terrain C [--reverse] [--levels 0,1,2,3,4,5,6] [--envs-per-level 30] [--speed 0.20] [--seconds 40] [--device cpu]
 
 All envs on the chosen terrain type (B or C columns), --envs-per-level per level, one episode of --seconds at a constant
-straight command. Success = the level is COMPLETED, however slowly (Ben, 2026-11-03): progress along the command (as
-the command term integrates it) reaches the type's completion distance before any termination. C: 4.4 m = body 0.2 m
-past the exit riser (the whole 4 m raised section walked); B: --b-complete-m (2 m). Whatever happens after completion
-does not count (the robot walks on into the next level's tile). Also reported: C "climbed" (0.7 m = body 0.5 m past the
-entry riser, the training gate's C criterion), the speed over the completed course, and the old rule (alive at 20 s and
->= 0.8 x the commanded distance by then; a speed criterion). --reverse (C only): spawn at the far end facing -x, raised
-side on the robot's RIGHT (right feet climb). A level is "mastered" here at 100 %. Writes mastery_<label>.txt / .json.
+straight command. Success = the level is got through without a fall, however slowly (Ben, 2026-11-03):
+  C: the body got 0.5 m past the entry riser (up on the raised half; 0.7 m from the spawn, measured along the lane in
+     the world frame) and no termination during the whole run, until the robot leaves its own course (4.7 m; the next
+     tile is another level). This is the training gate's C criterion (gate "complete").
+  B: progress along the command (as the command term integrates it) reached --b-complete-m (2 m) before any
+     termination; whatever happens after that does not count.
+Also reported: C "course" = whole raised section walked (4.4 m, body past the exit riser) within --seconds, the speed
+over it, fall causes, and the old rule (alive at 20 s and >= 0.8 x the commanded distance by then; a speed criterion).
+--reverse (C only): spawn at the far end facing -x, raised side on the robot's RIGHT (right feet climb). A level is
+"mastered" here at 100 %. Writes mastery_<label>.txt / .json.
 """
 
 from __future__ import annotations
@@ -79,12 +82,18 @@ assert bool((TR.env_terrain_type_ids(t) == TERRAIN_TYPES.index(TYPE)).all())
 steps = round(args.seconds / env.step_dt)
 old_steps = round(20.0 / env.step_dt)
 is_c = TYPE == "C_step"
-course_m = TR.C_STEP_X_RANGE[1] - TR.C_SPAWN_OFFSET_XY[0] + 0.2 if is_c else args.b_complete_m  # C: 4.4 m
 climb_m = TR.C_STEP_X_RANGE[0] - TR.C_SPAWN_OFFSET_XY[0] + 0.5  # 0.7 m
-alive = torch.ones(N, dtype=torch.bool, device=env.device)   # no termination before completion
-done = torch.zeros(N, dtype=torch.bool, device=env.device)   # completed
+course_m = TR.C_STEP_X_RANGE[1] - TR.C_SPAWN_OFFSET_XY[0] + 0.2  # 4.4 m
+leave_m = TR.C_COURSE_LEN_M - TR.C_SPAWN_ALONG_M  # 4.7 m
+robot = env.scene["robot"]
+x0 = robot.data.root_link_pos_w[:, 0].clone()
+sgn = -1.0 if args.reverse else 1.0
+alive = torch.ones(N, dtype=torch.bool, device=env.device)   # no termination while it counts
+alive_all = torch.ones(N, dtype=torch.bool, device=env.device)  # no termination at all (old rule)
+stop = torch.zeros(N, dtype=torch.bool, device=env.device)   # stopped counting (B: 2 m reached, C: left its course)
 climbed = torch.zeros(N, dtype=torch.bool, device=env.device)
-t_done = torch.full((N,), float("nan"), device=env.device)
+course = torch.zeros(N, dtype=torch.bool, device=env.device)
+t_course = torch.full((N,), float("nan"), device=env.device)
 progress = torch.zeros(N, device=env.device)
 old_ok = torch.zeros(N, dtype=torch.bool, device=env.device)
 cause = [""] * N
@@ -96,35 +105,44 @@ with torch.inference_mode():
     cmd.vel_command_b[:, 1:] = 0.0
     obs, _, dones, _ = w.step(policy(obs))
     policy_reset(dones)
-    d = dones.bool() & alive & ~done
+    d = dones.bool() & alive & ~stop
     for i in d.nonzero().flatten().tolist():
       cause[i] = next((n for n in tm.active_terms if bool(tm.get_term(n)[i])), "?")
     alive &= ~d
-    live = alive & ~done
-    # the command term integrates progress and zeroes it on reset: keep the value of the last live step
-    progress = torch.where(live, cmd.cmd_progress, progress)
-    climbed |= live & (progress >= climb_m)
-    new = live & (progress >= course_m)
-    t_done = torch.where(new, torch.full_like(t_done, (k + 1) * env.step_dt), t_done)
-    done |= new
+    alive_all &= ~dones.bool()
+    live = alive & ~stop
+    # C: along the lane, world frame; B: the command term's progress (zeroed on reset: keep the last live value)
+    now = sgn * (robot.data.root_link_pos_w[:, 0] - x0) if is_c else cmd.cmd_progress
+    progress = torch.where(live, now, progress)
     if k + 1 == old_steps:
-      old_ok = alive & (done | (progress >= args.promote_frac * args.speed * 20.0))
+      old_ok = alive_all & (cmd.cmd_progress >= args.promote_frac * args.speed * 20.0)
+    if is_c:
+      climbed |= live & (progress >= climb_m)
+      new = live & ~course & (progress >= course_m)
+      t_course = torch.where(new, torch.full_like(t_course, (k + 1) * env.step_dt), t_course)
+      course |= new
+      stop |= live & (progress >= leave_m)
+    else:
+      stop |= live & (progress >= args.b_complete_m)
+done = (climbed & alive) if is_c else stop
 ok = done.cpu().numpy()
 fell = (~alive).cpu().numpy()
-clb = climbed.cpu().numpy()
-td = t_done.cpu().numpy()
+crs = course.cpu().numpy()
+td = t_course.cpu().numpy()
 prog = progress.cpu().numpy()
 oldk = old_ok.cpu().numpy()
 lv = level.cpu().numpy()
 res = {"label": args.label, "checkpoint": args.checkpoint, "terrain": TYPE, "reverse": args.reverse, "speed": args.speed,
-       "seconds": args.seconds, "complete_m": course_m, "climb_m": climb_m if is_c else None, "levels": []}
+       "seconds": args.seconds, "climb_m": climb_m if is_c else None, "course_m": course_m if is_c else None,
+       "b_complete_m": None if is_c else args.b_complete_m, "levels": []}
 step_mm = lambda L: (L / (TR.CUR_NUM_LEVELS - 1) * TR.C_DELTA_M * TR.CUR_TERRAIN_SCALE * 1e3) if is_c else None  # noqa: E731
-what = (f"{course_m:.1f} m = body past the exit riser (whole raised section)" if is_c else f"{course_m:.1f} m")
+what = ("climbed: body 0.5 m past the entry riser, then no fall until it leaves the course" if is_c
+        else f"{args.b_complete_m:.1f} m before any fall")
 lines = [f"{args.label}: {args.checkpoint}",
          f"{TYPE}{' REVERSED (raised side on the right)' if args.reverse else ''}, straight {args.speed} m/s for "
-         f"{args.seconds:.0f} s, {K} envs per level; success = completed ({what}) without a termination, any speed",
-         "level | step mm | success | " + ("climbed | " if is_c else "") + "falls | progress m (mean, min) | "
-         "speed to complete m/s | old 20 s rule | fall causes"]
+         f"{args.seconds:.0f} s, {K} envs per level; success = {what}, any speed",
+         "level | step mm | success | " + ("course 4.4 m | " if is_c else "") + "falls | progress m (mean, min) | "
+         + ("course speed m/s | " if is_c else "") + "old 20 s rule | fall causes"]
 first_unmastered = None
 for L in LV:
   m = lv == L
@@ -132,19 +150,20 @@ for L in LV:
   for i in np.nonzero(m & fell)[0]:
     causes[cause[i]] = causes.get(cause[i], 0) + 1
   row = {"level": L, "n": int(m.sum()), "success": float(ok[m].mean()), "falls": float(fell[m].mean()),
-         "climbed": float(clb[m].mean()) if is_c else None,
+         "course": float(crs[m].mean()) if is_c else None,
          "progress_mean_m": float(prog[m].mean()), "progress_min_m": float(prog[m].min()),
-         "speed_complete_m_s": float(course_m / np.nanmean(td[m & ok])) if (m & ok).any() else None,
+         "course_speed_m_s": float(course_m / np.nanmean(td[m & crs])) if is_c and (m & crs).any() else None,
          "old_rule_success": float(oldk[m].mean()), "fall_causes": causes}
   res["levels"].append(row)
   if first_unmastered is None and row["success"] < 1.0:
     first_unmastered = L
   h = step_mm(L)
-  sp = row["speed_complete_m_s"]
+  sp = row["course_speed_m_s"]
   lines.append(f"{L:5d} | {('%.1f' % h) if h is not None else '  -':>7s} | {row['success']:7.0%} | "
-               + (f"{row['climbed']:7.0%} | " if is_c else "")
+               + (f"{row['course']:12.0%} | " if is_c else "")
                + f"{row['falls']:5.0%} | {row['progress_mean_m']:.2f}, {row['progress_min_m']:.2f} | "
-               f"{('%.3f' % sp) if sp is not None else '-':>5s} | {row['old_rule_success']:6.0%} | "
+               + (f"{('%.3f' % sp) if sp is not None else '-':>16s} | " if is_c else "")
+               + f"{row['old_rule_success']:13.0%} | "
                + (", ".join(f"{c} {n}" for c, n in causes.items()) or "-"))
 res["first_unmastered"] = first_unmastered
 lines.append(f"first level below 100 %: {first_unmastered if first_unmastered is not None else 'none'}")

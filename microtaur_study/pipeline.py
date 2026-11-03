@@ -269,8 +269,8 @@ class Pipeline:
              "**Turning + virtual legs:**", "```", read(d / f"turn_legs_{label}.txt"), "```",
              f"**Tight turns, S tours (spine free / locked; plot `{d / f'spine_turn_{label}.png'}`):**", "```",
              read(d / f"spine_turn_{label}.txt"), "```",
-             "**Terrain mastery (straight 0.20 m/s for 40 s, 30 envs per level; success = level completed without a"
-             " termination, any speed (C: whole raised section, B: 2 m); mastered = 100 %):**", "```", *(read(d / f"mastery_{label}_{tt}.txt") for tt, _ in MASTERY_SETS), "```",
+             "**Terrain mastery (straight 0.20 m/s for 40 s, 30 envs per level; success = got through without a fall, any"
+             " speed (C: up on the raised half and no fall on the course, B: 2 m without a fall); mastered = 100 %):**", "```", *(read(d / f"mastery_{label}_{tt}.txt") for tt, _ in MASTERY_SETS), "```",
              "**Videos:** " + ", ".join(f"`{p}`" for p in sorted((d / "videos").glob("*.mp4"))), ""]
     with open(out / "summary.md", "a") as fh:
       fh.write("\n".join(lines) + "\n")
