@@ -8,7 +8,8 @@ Two rules:
     nvidia-smi / nvtop show it) is read from $MT_GPU_CAP_MIB or ~/.config/microtaur/gpu_cap_mib (no file and no
     variable: no cap). "Ours" = every GPU process of this user. A script that would push our total over the cap runs
     its physics on the CPU (pick_device), skips rendering (gpu_allows) or refuses to start a training
-    (isaac_train.py).
+    (isaac_train.py). CPU physics still opens Kit's GPU context (220-360 MiB measured, also with CUDA hidden): when
+    even that does not fit, pick_device exits (SKIPPED_GPU_CAP), so nothing Isaac runs beside a 4.9 GB training.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import sys
 from pathlib import Path
 
 MIN_FREE_MIB = 3000  # a Teacher-Cur play env needs roughly 2-3 GB of GPU memory
+KIT_CONTEXT_MIB = 400  # Kit's own GPU memory with CPU physics (220-360 MiB measured)
 CAP_FILE = Path.home() / ".config" / "microtaur" / "gpu_cap_mib"
 
 
@@ -73,16 +75,24 @@ def gpu_allows(need_mib: int, what: str) -> bool:
   return True
 
 
+def _cpu() -> str:
+  if not gpu_allows(KIT_CONTEXT_MIB, "Kit's GPU context (also with CPU physics)"):
+    print("SKIPPED_GPU_CAP", flush=True)
+    raise SystemExit(3)
+  return "cpu"
+
+
 def pick_device(requested: str, min_free_mib: int = MIN_FREE_MIB) -> str:
-  """`requested`, or "cpu" when the cap does not allow a GPU env, or (no --device given) the GPU is nearly full."""
+  """`requested`, or "cpu" when the cap does not allow a GPU env, or (no --device given) the GPU is nearly full;
+  exits when the cap does not even allow Kit's context."""
   if not requested.startswith("cuda"):
-    return requested
+    return _cpu()
   if not gpu_allows(min_free_mib, "a GPU env"):
-    return "cpu"  # the cap is hard: it also overrides an explicit --device cuda
+    return _cpu()  # the cap is hard: it also overrides an explicit --device cuda
   if "--device" in sys.argv:
     return requested
   free = gpu_free_mib(int(requested.split(":")[1]) if ":" in requested else 0)
   if free is not None and free < min_free_mib:
     print(f"[gpu] only {free} MiB free on {requested} -> running on cpu", flush=True)
-    return "cpu"
+    return _cpu()
   return requested
