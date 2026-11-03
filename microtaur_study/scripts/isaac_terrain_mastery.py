@@ -4,7 +4,8 @@
       --terrain C [--reverse] [--levels 0,1,2,3,4,5,6] [--envs-per-level 30] [--speed 0.20] [--seconds 40] [--device cpu]
 
 All envs on the chosen terrain type (B or C columns), --envs-per-level per level, one episode of --seconds at a constant
-straight command. Success = the level is got through without a fall, however slowly (Ben, 2026-11-03):
+straight command. Envs ended by physics_unstable (a simulator fault) or out_of_terrain_bounds are not counted (as in the
+training gate). Success = the level is got through without a fall, however slowly (Ben, 2026-11-03):
   C: the body got 0.5 m past the entry riser (up on the raised half; 0.7 m from the spawn, measured along the lane in
      the world frame) and no termination during the whole run, until the robot leaves its own course (4.7 m; the next
      tile is another level). This is the training gate's C criterion (gate "complete").
@@ -97,6 +98,8 @@ t_course = torch.full((N,), float("nan"), device=env.device)
 progress = torch.zeros(N, device=env.device)
 old_ok = torch.zeros(N, dtype=torch.bool, device=env.device)
 cause = [""] * N
+excl = np.zeros(N, dtype=bool)  # ended by a truncation that is not the robot's failure: not counted
+EXCLUDED = ("physics_unstable", "out_of_terrain_bounds")
 tm = env.termination_manager
 with torch.inference_mode():
   obs = w.get_observations()
@@ -108,6 +111,7 @@ with torch.inference_mode():
     d = dones.bool() & alive & ~stop
     for i in d.nonzero().flatten().tolist():
       cause[i] = next((n for n in tm.active_terms if bool(tm.get_term(n)[i])), "?")
+      excl[i] = cause[i] in EXCLUDED
     alive &= ~d
     alive_all &= ~dones.bool()
     live = alive & ~stop
@@ -125,8 +129,8 @@ with torch.inference_mode():
     else:
       stop |= live & (progress >= args.b_complete_m)
 done = (climbed & alive) if is_c else stop
-ok = done.cpu().numpy()
-fell = (~alive).cpu().numpy()
+ok = done.cpu().numpy() & ~excl
+fell = (~alive).cpu().numpy() & ~excl
 crs = course.cpu().numpy()
 td = t_course.cpu().numpy()
 prog = progress.cpu().numpy()
@@ -142,15 +146,18 @@ lines = [f"{args.label}: {args.checkpoint}",
          f"{TYPE}{' REVERSED (raised side on the right)' if args.reverse else ''}, straight {args.speed} m/s for "
          f"{args.seconds:.0f} s, {K} envs per level; success = {what}, any speed",
          "level | step mm | success | " + ("course 4.4 m | " if is_c else "") + "falls | progress m (mean, min) | "
-         + ("course speed m/s | " if is_c else "") + "old 20 s rule | fall causes"]
+         + ("course speed m/s | " if is_c else "") + "old 20 s rule | not counted | fall causes"]
 first_unmastered = None
 for L in LV:
   m = lv == L
   causes = {}
   for i in np.nonzero(m & fell)[0]:
     causes[cause[i]] = causes.get(cause[i], 0) + 1
-  row = {"level": L, "n": int(m.sum()), "success": float(ok[m].mean()), "falls": float(fell[m].mean()),
-         "course": float(crs[m].mean()) if is_c else None,
+  c = m & ~excl  # counted envs
+  nc = max(int(c.sum()), 1)
+  row = {"level": L, "n": int(m.sum()), "not_counted": int((m & excl).sum()),
+         "success": float(ok[c].sum() / nc), "falls": float(fell[c].sum() / nc),
+         "course": float(crs[c].sum() / nc) if is_c else None,
          "progress_mean_m": float(prog[m].mean()), "progress_min_m": float(prog[m].min()),
          "course_speed_m_s": float(course_m / np.nanmean(td[m & crs])) if is_c and (m & crs).any() else None,
          "old_rule_success": float(oldk[m].mean()), "fall_causes": causes}
@@ -163,7 +170,7 @@ for L in LV:
                + (f"{row['course']:12.0%} | " if is_c else "")
                + f"{row['falls']:5.0%} | {row['progress_mean_m']:.2f}, {row['progress_min_m']:.2f} | "
                + (f"{('%.3f' % sp) if sp is not None else '-':>16s} | " if is_c else "")
-               + f"{row['old_rule_success']:13.0%} | "
+               + f"{row['old_rule_success']:13.0%} | {row['not_counted']:11d} | "
                + (", ".join(f"{c} {n}" for c, n in causes.items()) or "-"))
 res["first_unmastered"] = first_unmastered
 lines.append(f"first level below 100 %: {first_unmastered if first_unmastered is not None else 'none'}")
