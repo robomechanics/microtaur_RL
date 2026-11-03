@@ -123,7 +123,8 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
                             demote_frac: float = 0.4, steps_per_level: int = 300 * 32,
                             min_level: int = 0, gate: str = "time", gate_success: float = 0.8,
                             gate_min_episodes: int = 64, gate_min_iters: int = 20, gate_start_iter: int = 200,
-                            gate_start_levels: Sequence[int] = (-1, -1, -1), gate_min_cmd_m: float = 1.0):
+                            gate_start_levels: Sequence[int] = (-1, -1, -1), gate_min_cmd_m: float = 1.0,
+                            gate_complete_m: Sequence[float] = (2.0, 2.0, 0.7), gate_count_factor: float = 2.0):
   """Terrain curriculum on commanded distance (Teacher-Cur).
 
   Per episode the command term integrates the commanded path length and the body's
@@ -137,9 +138,19 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
                     then at most one level per gate_min_iters and gate_min_episodes episodes). The caps start at
                     gate_start_levels (per type A, B, C; -1 = min_level); only episodes with a commanded distance
                     >= gate_min_cmd_m count for the gate (the per-env promotion still uses every episode).
+    gate "complete" (Ben, 2026-11-03: a level is learnt when the robot gets through it without falling, however
+                    slowly): an episode SUCCEEDS if the robot did not fall (termination, not a time-out) and its
+                    progress reached gate_complete_m of its terrain type (A, B, C; C 0.7 m = body 0.5 m past the
+                    entry riser, i.e. up on the raised half), or it left its own C course before a fall (progress
+                    >= the course end; the next tile is another level). It COUNTS if it fell or its commanded distance
+                    was >= gate_count_factor x gate_complete_m (a robot at half the commanded speed can make it), and
+                    never after a physics_unstable truncation (a simulator fault, not the robot's). Counted episodes
+                    move the env one level up on success and one down on failure; the per-type cap is the same
+                    SuccessGate, but over the exact last gate_min_episodes counted episodes at the cap.
   Robots at the unlocked cap stay there. Run-out rows past the last level are never assigned. Returns the mean
-  level (gate "time") or the mean level, the cap and the gate's success rate per terrain type (gate "success")."""
-  from microtaur_common.curriculum import SuccessGate, progress_levels
+  level (gate "time") or the mean level, the cap and the gate's success rate per terrain type (gate "success" /
+  "complete")."""
+  from microtaur_common.curriculum import SuccessGate, progress_levels, step_levels
   from microtaur_common.task_params import STEPS_PER_ITER
 
   from . import TERRAIN_TYPES
@@ -154,7 +165,26 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
   expected = term.cmd_distance[env_ids] / elapsed * env.max_episode_length_s
   ratio = term.cmd_progress[env_ids] / expected.clamp_min(1e-3)
   lv = terrain.terrain_levels[env_ids]
-  if gate == "success":
+  if gate == "complete":
+    g = getattr(env, "microtaur_success_gate", None)
+    if g is None:
+      g = env.microtaur_success_gate = SuccessGate(
+        len(TERRAIN_TYPES), n_lv, env.device, success=gate_success,
+        start_level=[min_level if int(v) < 0 else int(v) for v in gate_start_levels],
+        min_episodes=gate_min_episodes, window=gate_min_episodes,
+        min_steps=gate_min_iters * STEPS_PER_ITER, start_step=gate_start_iter * STEPS_PER_ITER)
+    types = TR.env_terrain_type_ids(terrain)[env_ids]
+    need = torch.tensor(gate_complete_m, device=env.device, dtype=torch.float)[types]
+    tm = env.termination_manager
+    fell = tm.terminated[env_ids]
+    unstable = tm.get_term("physics_unstable")[env_ids] if "physics_unstable" in tm.active_terms else torch.zeros_like(fell)
+    progress = term.cmd_progress[env_ids]
+    left = (types == TERRAIN_TYPES.index("C_step")) & (progress >= TR.C_COURSE_LEN_M - TR.C_SPAWN_ALONG_M)
+    ok = (~fell & (progress >= need)) | left
+    valid = (fell | (term.cmd_distance[env_ids] >= gate_count_factor * need)) & ~unstable
+    cap = g.update(step, types, lv, ok, valid=valid)[types]
+    lv = step_levels(lv, valid & ok, valid & ~ok, cap, min_level)
+  elif gate == "success":
     g = getattr(env, "microtaur_success_gate", None)
     if g is None:
       g = env.microtaur_success_gate = SuccessGate(
@@ -166,11 +196,12 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
     cap = g.update(step, types, lv, ratio >= promote_frac, valid=expected >= gate_min_cmd_m)[types]
   else:
     cap = torch.tensor(min(n_lv - 1, max(min_level, step // steps_per_level)), device=lv.device)
-  lv = progress_levels(lv, ratio, cap, promote_frac, demote_frac, min_level)  # min_level > 0: never back to flat
+  if gate != "complete":
+    lv = progress_levels(lv, ratio, cap, promote_frac, demote_frac, min_level)  # min_level > 0: never back to flat
   terrain.terrain_levels[env_ids] = lv
   terrain.env_origins[env_ids] = terrain.terrain_origins[lv, terrain.terrain_types[env_ids]]
   mean = torch.mean(terrain.terrain_levels.float())
-  if gate != "success":
+  if gate not in ("success", "complete"):
     return mean
   g = env.microtaur_success_gate
   rate = g.rate()
@@ -375,7 +406,8 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
           # gate "success": per-terrain cap unlocked by success at the cap (see terrain_levels_progress); the keys
           # are listed here because IsaacLab's cfg update rejects new dict keys from Hydra
           "gate": "time", "gate_success": 0.8, "gate_min_episodes": 64, "gate_min_iters": 20, "gate_start_iter": 200,
-          "gate_start_levels": (-1, -1, -1), "gate_min_cmd_m": 1.0})
+          "gate_start_levels": (-1, -1, -1), "gate_min_cmd_m": 1.0, "gate_complete_m": (2.0, 2.0, 0.7),
+          "gate_count_factor": 2.0})
         if self.cur_terrain
         else CurriculumTermCfg(func=terrain_levels_from_spawn))
     if self.play:

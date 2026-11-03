@@ -248,7 +248,7 @@ class Pipeline:
          d / "spine_turn.log", self.runs, 1800, d / f"spine_turn_{label}.txt")
     for tt, terrain in MASTERY_SETS:
       step([PY, SCRIPTS / "isaac_terrain_mastery.py", "--checkpoint", ck, "--label", f"{label}_{tt}", "--out", d, *terrain,
-            "--envs-per-level", 3 if self.smoke else 30], d / f"mastery_{tt}.log", self.runs, 1800, d / f"mastery_{label}_{tt}.txt")
+            "--envs-per-level", 3 if self.smoke else 30], d / f"mastery_{tt}.log", self.runs, 3600, d / f"mastery_{label}_{tt}.txt")
     steps = 40 if self.smoke else 420
     for env, name, eye, look in TERRAIN_VIDEOS:
       self.video(ck, vid / f"{label}_{name}.mp4", env=env, steps=steps, eye=eye, lookat=look)
@@ -269,8 +269,8 @@ class Pipeline:
              "**Turning + virtual legs:**", "```", read(d / f"turn_legs_{label}.txt"), "```",
              f"**Tight turns, S tours (spine free / locked; plot `{d / f'spine_turn_{label}.png'}`):**", "```",
              read(d / f"spine_turn_{label}.txt"), "```",
-             "**Terrain mastery (straight 0.20 m/s, 30 envs per level; success = no termination and >= 80 % of the commanded"
-             " distance; mastered = 100 %):**", "```", *(read(d / f"mastery_{label}_{tt}.txt") for tt, _ in MASTERY_SETS), "```",
+             "**Terrain mastery (straight 0.20 m/s for 40 s, 30 envs per level; success = level completed without a"
+             " termination, any speed (C: whole raised section, B: 2 m); mastered = 100 %):**", "```", *(read(d / f"mastery_{label}_{tt}.txt") for tt, _ in MASTERY_SETS), "```",
              "**Videos:** " + ", ".join(f"`{p}`" for p in sorted((d / "videos").glob("*.mp4"))), ""]
     with open(out / "summary.md", "a") as fh:
       fh.write("\n".join(lines) + "\n")
