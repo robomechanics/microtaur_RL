@@ -96,7 +96,7 @@ with torch.inference_mode():
     rec["fy"].append(fy.cpu().numpy().copy())
     rec["done"].append(dones.cpu().numpy().copy())
 R = {k: np.stack(v) for k, v in rec.items()}
-KIN = five_bar_for(cfg.variant == "yaw")
+KIN = five_bar_for(cfg.variant)
 x0, x1 = TR.C_STEP_X_RANGE
 res = {}
 lines = [f"checkpoint {args.checkpoint}", f"C lane, straight {args.speed} m/s, {args.steps} steps; on-step = root x inside [{x0 + 0.15:.2f}, {x1:.2f}] m",

@@ -35,7 +35,7 @@ from .mdp import observations as O
 from .mdp import rewards as R
 from .mdp import terminations as T
 from .mdp.actions import MicrotaurWalkActionCfg
-from .robot import MICROTAUR_RIGID_CFG, MICROTAUR_YAW_CFG, VISUAL_USD_PATH, YAW_VISUAL_USD_PATH
+from .robot import MICROTAUR_RIGID_CFG, robot_cfg, visual_usd_path
 
 PHYSICS_DT_S = 0.0025
 DECIMATION = round(POLICY_DT_S / PHYSICS_DT_S)  # 14
@@ -124,7 +124,8 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
                             min_level: int = 0, gate: str = "time", gate_success: float = 0.8,
                             gate_min_episodes: int = 64, gate_min_iters: int = 20, gate_start_iter: int = 200,
                             gate_start_levels: Sequence[int] = (-1, -1, -1), gate_min_cmd_m: float = 1.0,
-                            gate_complete_m: Sequence[float] = (2.0, 2.0, 0.7), gate_count_factor: float = 2.0):
+                            gate_complete_m: Sequence[float] = (2.0, 2.0, 0.7), gate_count_factor: float = 2.0,
+                            per_env: str = "complete"):
   """Terrain curriculum on commanded distance (Teacher-Cur).
 
   Per episode the command term integrates the commanded path length and the body's
@@ -147,6 +148,10 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
                     never after a physics_unstable truncation (a simulator fault, not the robot's). Counted episodes
                     move the env one level up on success and one down on failure; the per-type cap is the same
                     SuccessGate, but over the exact last gate_min_episodes counted episodes at the cap.
+                    per_env "speed" (Ben, 2026-11-04; legged_gym / IsaacLab style, as y6): the cap still unlocks on
+                    completion, but each env moves on its commanded-distance ratio like the other gates (up at
+                    >= promote_frac, down below demote_frac): with "complete" any speed promoted the env, so envs
+                    piled up on the top levels and the teachers walked slowly (y7 / y8).
   Robots at the unlocked cap stay there. Run-out rows past the last level are never assigned. Returns the mean
   level (gate "time") or the mean level, the cap and the gate's success rate per terrain type (gate "success" /
   "complete")."""
@@ -183,7 +188,12 @@ def terrain_levels_progress(env, env_ids, command_name: str = "twist", promote_f
     ok = (~fell & (progress >= need)) | left
     valid = (fell | (term.cmd_distance[env_ids] >= gate_count_factor * need)) & ~unstable
     cap = g.update(step, types, lv, ok, valid=valid)[types]
-    lv = step_levels(lv, valid & ok, valid & ~ok, cap, min_level)
+    if per_env == "speed":
+      lv = progress_levels(lv, ratio, cap, promote_frac, demote_frac, min_level)
+    elif per_env == "complete":
+      lv = step_levels(lv, valid & ok, valid & ~ok, cap, min_level)
+    else:
+      raise ValueError(f"terrain_levels per_env must be 'complete' or 'speed', got {per_env!r}")
   elif gate == "success":
     g = getattr(env, "microtaur_success_gate", None)
     if g is None:
@@ -342,7 +352,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
   cur_terrain: bool = False  # rough only: 7-level railed-C terrain + run-out row, commanded-distance curriculum
   c_reverse_frac: float = 0.0  # fraction of C spawns walking the lane in -x (raised side on the robot's right)
   student_obs: bool = False  # add the 47-D deployable "student" group (2 IMUs, FK) for distillation
-  variant: str = "rigid"  # "rigid" or "yaw" (active-yaw spine: 9 motors, two trunk halves, IMU 2 real)
+  variant: str = "rigid"  # microtaur_common.robot_models entry ("rigid", "yaw", "rigid_uno", "yaw_uno", ...)
   leg_polar_obs: bool = False  # add foot (x, z) + virtual leg (r, theta) x 4 to critic / teacher, (r, theta) to the student
   energy_target: float | None = None  # final motor_energy weight of the ramp (negative); None = WEIGHTS (0)
   scene: MicrotaurSceneCfg = MicrotaurSceneCfg(num_envs=2048, env_spacing=0.5)
@@ -355,11 +365,17 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.sim.render_interval = DECIMATION
     self.sim.physics_material = self.scene.terrain.physics_material
     self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
-    yaw = self.variant == "yaw"
-    if yaw:
-      from microtaur_common.robot_constants import YAW_ROOT_BODY
-      self.scene.robot = MICROTAUR_YAW_CFG
-    root_body = YAW_ROOT_BODY if yaw else ROOT_BODY_NAME
+    # Smaller than IsaacLab's defaults (2^23, 2^25), still far above what 2048 of these 10 cm robots use (a few
+    # dozen contacts each): 1.2 GB less GPU memory per training, so two fit beside each other (2026-11-04).
+    # A buffer overflow would show as a PhysX error in the training log; below that the physics is identical
+    # (seeded rigid / yaw rollouts bit-identical to the defaults).
+    self.sim.physx.gpu_max_rigid_contact_count = 2**22
+    self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 2**23
+    from microtaur_common.robot_models import robot_model
+    model = robot_model(self.variant)
+    spine = model.has_spine  # 9 motors (spine last), two trunk halves, second IMU real
+    self.scene.robot = robot_cfg(self.variant)
+    root_body = model.root_body
 
     if self.rough:
       from . import terrains as TR
@@ -383,14 +399,14 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.actions.joint_pos = MicrotaurWalkActionCfg(
       target_gain_range=(1.0, 1.0) if self.play else s2r.action_gain_range,
       target_bias_rad=0.0 if self.play else s2r.action_bias_rad,
-      spine_joint_name=SPINE_JOINT_NAME if yaw else None,
+      spine_joint_name=SPINE_JOINT_NAME if spine else None,
     )
     self.commands = _Commands()
     self.commands.twist = C.make_twist_command_cfg(play=self.play)
     self.rewards = R.make_rewards_cfg(self.variant)
     self.terminations = T.make_terminations_cfg(self.variant)
     self.events = _Events()
-    for k, v in _events(s2r, self.play, self.rough, root_body=root_body, num_motors=9 if yaw else 8).items():
+    for k, v in _events(s2r, self.play, self.rough, root_body=root_body, num_motors=9 if spine else 8).items():
       setattr(self.events, k, v)
     if self.rough:
       # (-1, -1) = off; set with env.events.init_terrain_levels.params.level_range=[lo,hi]
@@ -407,7 +423,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
           # are listed here because IsaacLab's cfg update rejects new dict keys from Hydra
           "gate": "time", "gate_success": 0.8, "gate_min_episodes": 64, "gate_min_iters": 20, "gate_start_iter": 200,
           "gate_start_levels": (-1, -1, -1), "gate_min_cmd_m": 1.0, "gate_complete_m": (2.0, 2.0, 0.7),
-          "gate_count_factor": 2.0})
+          "gate_count_factor": 2.0, "per_env": "complete"})
         if self.cur_terrain
         else CurriculumTermCfg(func=terrain_levels_from_spawn))
     if self.play:
@@ -417,7 +433,7 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
         self.scene.terrain.max_init_terrain_level = None
         self.curriculum.terrain_levels = None
       self.scene.robot = self.scene.robot.replace(
-        spawn=self.scene.robot.spawn.replace(usd_path=str(YAW_VISUAL_USD_PATH if yaw else VISUAL_USD_PATH)))
+        spawn=self.scene.robot.spawn.replace(usd_path=str(visual_usd_path(self.variant))))
       # GUI camera follows env 0's robot from the front-left side.
       self.viewer.origin_type = "asset_root"
       self.viewer.asset_name = "robot"
@@ -579,3 +595,19 @@ class MicrotaurYawTeacherCurStudentEnvCfg(MicrotaurYawTeacherCurEnvCfg):
 @configclass
 class MicrotaurYawTeacherCurStudentPlayEnvCfg(MicrotaurYawTeacherCurPlayEnvCfg):
   student_obs: bool = True
+
+
+# ---------------------------------------------------------------- 2026-11-04 hardware layout (robot_models "*_uno")
+# One Teacher-Cur / -Play / -Student / -Student-Play cfg per model, all with the same observations: leg_polar_obs
+# on for every robot (the yaw tasks had it and the rigid ones did not, 10-29 .. 11-04). No per-robot energy
+# default: the pipeline recipe sets the same motor-energy ramp for every robot, teacher and student.
+UNO_VARIANTS = {"rigid_uno": "RigidUno", "yaw_uno": "YawUno"}
+_UNO_BASES = {"TeacherCurEnvCfg": MicrotaurTeacherCurEnvCfg, "TeacherCurPlayEnvCfg": MicrotaurTeacherCurPlayEnvCfg,
+              "TeacherCurStudentEnvCfg": MicrotaurTeacherCurStudentEnvCfg,
+              "TeacherCurStudentPlayEnvCfg": MicrotaurTeacherCurStudentPlayEnvCfg}
+for _variant, _tag in UNO_VARIANTS.items():
+  for _suffix, _base in _UNO_BASES.items():
+    _name = f"Microtaur{_tag}{_suffix}"
+    globals()[_name] = configclass(type(_name, (_base,), {
+      "__module__": __name__, "__qualname__": _name, "__doc__": f"{_base.__name__} on the {_variant} robot.",
+      "__annotations__": {"variant": str, "leg_polar_obs": bool}, "variant": _variant, "leg_polar_obs": True}))

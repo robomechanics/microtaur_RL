@@ -8,7 +8,10 @@ from isaaclab.utils.math import quat_from_euler_xyz
 
 from microtaur_common.kinematics import FULL_JOINT_NAMES, five_bar_for
 from microtaur_common.reset import sample_reset
-from microtaur_common.robot_constants import LEG_JOINT_NAMES, SPINE_JOINT_NAME, YAW_HIP_Z_ROOT_M
+from microtaur_common.robot_constants import LEG_JOINT_NAMES, SPINE_JOINT_NAME
+from microtaur_common.robot_models import robot_model
+
+from .. import env_variant
 
 SPINE_RESET_RAD = 0.05  # randomised spine angle at reset, U(-x, x) (yaw robot)
 
@@ -48,9 +51,11 @@ def ik_consistent_reset(env, env_ids, randomize: bool, spawn_fn=None) -> None:
   motor_ids, _ = robot.find_joints(list(LEG_JOINT_NAMES), preserve_order=True)
   full_ids, _ = robot.find_joints(list(FULL_JOINT_NAMES), preserve_order=True)
   limits = robot.data.joint_pos_limits[ids][:, motor_ids, :].reshape(n, 4, 2, 2)
-  yaw_robot = SPINE_JOINT_NAME in robot.joint_names
-  r = sample_reset(n, randomize, limits, dev, dt, hip_z=YAW_HIP_Z_ROOT_M if yaw_robot else None,
-                   kin=five_bar_for(True) if yaw_robot else None)
+  variant = env_variant(env)
+  model = robot_model(variant)
+  yaw_robot = model.has_spine  # any spine robot
+  r = sample_reset(n, randomize, limits, dev, dt, hip_z=None if variant == "rigid" else model.hip_z_root_m,
+                   kin=None if variant == "rigid" else five_bar_for(variant))
 
   xy, yaw = r["root_xy"], r["yaw"]
   ground = torch.zeros_like(yaw)

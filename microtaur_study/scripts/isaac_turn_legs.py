@@ -69,7 +69,7 @@ yaw = SPINE_JOINT_NAME in robot.joint_names
 mids = [robot.joint_names.index(n) for n in LEG_JOINT_NAMES]
 sid = robot.joint_names.index(SPINE_JOINT_NAME) if yaw else None
 A = (TR.env_terrain_type_ids(t) == 0).cpu().numpy()
-K = five_bar_for(yaw)
+K = five_bar_for(cfg.variant)
 
 seg_of = []
 for i, (_, _, _, dur) in enumerate(TOUR):
@@ -97,7 +97,7 @@ with torch.inference_mode():
 R = {k: np.stack(v) for k, v in rec.items()}
 seg = np.array(seg_of)
 alive = (np.cumsum(R["done"], axis=0) == 0) & A[None]  # [T, N]
-res = {"label": args.label, "checkpoint": args.checkpoint, "variant": "yaw" if yaw else "rigid", "n_envs": int(A.sum()),
+res = {"label": args.label, "checkpoint": args.checkpoint, "variant": cfg.variant, "n_envs": int(A.sum()),
        "falls": int((R["done"][:, A]).any(axis=0).sum()), "segments": []}
 lines = [f"{args.label}: {args.checkpoint}", f"{res['variant']} robot, {res['n_envs']} A_flat envs, turn tour; envs that reset: {res['falls']}",
          "segment  | cmd vx  cmd wz | yaw rate rad/s (ratio) | vx m/s | spine deg mean +- std"]

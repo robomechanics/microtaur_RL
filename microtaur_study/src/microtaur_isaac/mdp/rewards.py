@@ -66,7 +66,7 @@ from microtaur_common.task_params import (  # noqa: F401  (re-exported)
 
 from .contact import foot_contact_timers
 from .terminations import UNSTABLE_ANG_VEL_RAD_S, UNSTABLE_LIN_VEL_M_S, physics_unstable
-from .. import foot_offsets_in_body
+from .. import env_variant, foot_offsets_in_body
 from .observations import ROBOT, feet_body_cfg, feet_sensor_cfg, legs_cfg
 
 if TYPE_CHECKING:
@@ -146,7 +146,7 @@ def feet_slide(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: Sc
   robot = env.scene[asset_cfg.name]
   d = robot.data
   quat = d.body_link_quat_w[:, asset_cfg.body_ids]
-  off = torch.tensor(foot_offsets_in_body(robot.joint_names), device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
+  off = torch.tensor(foot_offsets_in_body(env_variant(env)), device=quat.device, dtype=quat.dtype).expand(*quat.shape[:2], 3)
   r = quat_apply(quat.reshape(-1, 4), off.reshape(-1, 3)).reshape(off.shape)
   v = _finite(d.body_link_lin_vel_w[:, asset_cfg.body_ids]) + torch.cross(_finite(d.body_link_ang_vel_w[:, asset_cfg.body_ids]), r, dim=-1)
   # a PhysX blow-up step (truncated by physics_unstable) can leave NaN poses: clean the result, clamp keeps NaN
@@ -305,14 +305,20 @@ class MicrotaurRewardsCfg:
 
 
 def make_rewards_cfg(variant: str = "rigid") -> MicrotaurRewardsCfg:
+  """Motor energy over all the variant's motors (spine robots: + the spine with its own copper coefficient),
+  normalised by the variant's own mass (cost of transport: the same weight means the same cost per kg)."""
+  from microtaur_common.robot_models import robot_model
+
   cfg = MicrotaurRewardsCfg()
-  if variant == "yaw":
-    from microtaur_common.robot_constants import SPINE_COPPER_W_PER_NM2, YAW_TOTAL_MASS_KG
+  model = robot_model(variant)
+  cfg.motor_energy.params["mass_kg"] = model.total_mass_kg  # rigid: 0.540 = EXPECTED_TOTAL_MASS_KG
+  if model.has_spine:
+    from microtaur_common.robot_constants import SPINE_COPPER_W_PER_NM2
 
     from .observations import motors_cfg
     copper = (XL330_COPPER_W_PER_NM2,) * 8 + (SPINE_COPPER_W_PER_NM2,)
-    cfg.motor_energy.params.update({"copper_w_per_nm2": copper, "mass_kg": YAW_TOTAL_MASS_KG, "asset_cfg": motors_cfg("yaw")})
-    cfg.metrics.params.update({"copper_w_per_nm2": copper, "asset_cfg": motors_cfg("yaw")})
+    cfg.motor_energy.params.update({"copper_w_per_nm2": copper, "asset_cfg": motors_cfg(variant)})
+    cfg.metrics.params.update({"copper_w_per_nm2": copper, "asset_cfg": motors_cfg(variant)})
   return cfg
 
 

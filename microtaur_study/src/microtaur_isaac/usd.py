@@ -29,8 +29,12 @@ from microtaur_common.robot_constants import XML_PATH, motor_joint_ranges
 
 
 def compile_model(xml_path=None) -> mujoco.MjModel:
-  """The MJCF (default: the rigid robot) with the leg motor-range patch; other joints keep the XML's ranges."""
+  """The MJCF (default: the rigid robot) with the leg motor-range patch; other joints keep the XML's ranges.
+  Bodies without joints (the 2026-11-04 models' UNO Q and IMU-board masses) are fused into their parent
+  (MuJoCo fusestatic: same total mass, COM and inertia), so every USD body is connected by a joint; the
+  older models have none, so they compile exactly as before."""
   spec = mujoco.MjSpec.from_file(str(xml_path or XML_PATH))
+  spec.compiler.fusestatic = True
   for name, (lo, hi) in motor_joint_ranges().items():
     j = spec.joint(name)
     j.limited = mujoco.mjtLimited.mjLIMITED_TRUE

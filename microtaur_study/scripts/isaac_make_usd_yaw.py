@@ -1,7 +1,10 @@
 """Build the active-yaw Microtaur USDs (training + visual) from assets/active_yaw_microtaur/robot_2imu.xml
 and check them against MuJoCo.
 
-  OMNI_KIT_ACCEPT_EULA=YES python scripts/isaac_make_usd_yaw.py      (conda env spine)
+  OMNI_KIT_ACCEPT_EULA=YES python scripts/isaac_make_usd_yaw.py [--variant yaw_uno]     (conda env spine)
+
+--variant: a spine microtaur_common.robot_models entry (default yaw); USDs and <usd>.check.txt go to its asset dir.
+"rear" below = the model's other trunk half (the non-root one, second IMU).
 
 Checks (written to assets/active_yaw_microtaur/microtaur_yaw.usda.check.txt):
   1. per-body mass and principal inertia, PhysX vs MuJoCo; joint list (16 leg + spine); closure gap at stand
@@ -22,6 +25,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import argparse  # noqa: E402
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--variant", default="yaw")
+args, _ = ap.parse_known_args()
 from isaaclab.app import AppLauncher  # noqa: E402
 
 app = AppLauncher(headless=True).app
@@ -39,18 +47,23 @@ from isaaclab.utils.math import quat_apply, quat_mul  # noqa: E402
 from microtaur_common.kinematics import FULL_JOINT_NAMES  # noqa: E402
 from microtaur_common.reset import NOMINAL_FULL_Q  # noqa: E402
 from microtaur_common import robot_constants as RC  # noqa: E402
-from microtaur_isaac.robot import MICROTAUR_RIGID_CFG, MICROTAUR_YAW_CFG, YAW_NOMINAL_ROOT_HEIGHT_M, YAW_USD_PATH, YAW_VISUAL_USD_PATH  # noqa: E402
+from microtaur_common.robot_models import robot_model  # noqa: E402
+from microtaur_isaac.robot import MICROTAUR_RIGID_CFG, robot_cfg  # noqa: E402
 from microtaur_common.reset import NOMINAL_ROOT_HEIGHT_M  # noqa: E402
 from microtaur_isaac.usd import build_usd, compile_model  # noqa: E402
 
-LOG = open(RC.YAW_ASSET_DIR / "microtaur_yaw.usda.check.txt", "w")
+MODEL = robot_model(args.variant)
+assert MODEL.has_spine, "rigid robots: scripts/isaac_make_usd.py --variant ..."
+MICROTAUR_YAW_CFG, YAW_NOMINAL_ROOT_HEIGHT_M = robot_cfg(args.variant), MODEL.nominal_root_height_m
+YAW_USD_PATH, YAW_VISUAL_USD_PATH = MODEL.usd_path, MODEL.visual_usd_path
+LOG = open(str(YAW_USD_PATH) + ".check.txt", "w")
 
 
 def log(*a):
   LOG.write(" ".join(map(str, a)) + "\n"); LOG.flush(); print(*a, flush=True)
 
 
-XML = RC.YAW_XML_PATH
+XML = MODEL.xml_path
 info = build_usd(str(YAW_USD_PATH), xml_path=XML)
 log(f"wrote {YAW_USD_PATH}: {len(info['bodies'])} bodies, loops {info['loops']}, MuJoCo total mass {info['total_mass_kg']:.6f} kg")
 build_usd(str(YAW_VISUAL_USD_PATH), visuals=True, xml_path=XML)
@@ -129,7 +142,7 @@ for i, name in enumerate(robot.body_names):
 log(f"PhysX total mass {masses.sum():.6f} kg; max |mass diff| {worst_m:.2e} kg; max |principal inertia diff| {worst_i:.2e}")
 log(f"joints ({robot.num_joints}): {robot.joint_names}")
 assert RC.SPINE_JOINT_NAME in robot.joint_names and robot.num_joints == 17, "expected 16 leg joints + the spine"
-log(f"root body: {robot.body_names[0]} (expected {RC.YAW_ROOT_BODY})")
+log(f"root body: {robot.body_names[0]} (expected {MODEL.root_body})")
 vis: Articulation = scene["robot_vis"]
 assert vis.body_names == robot.body_names and vis.joint_names == robot.joint_names
 dm = float((vis.root_physx_view.get_masses() - robot.root_physx_view.get_masses()).abs().max())
@@ -146,8 +159,8 @@ for i in range(m.neq):
 log(f"closure gap at stand, max over 8 sites: {max(gaps):.2e} m")
 
 # ---------------------------------------------------------------- 5. IMU 2 frame at stand
-rear = robot.body_names.index(RC.YAW_REAR_BODY)
-q_imu2 = quat_mul(pose[rear, 3:7][None], torch.tensor(RC.YAW_IMU2_QUAT_IN_REAR, device=pose.device)[None])[0].cpu().numpy()
+rear = robot.body_names.index(MODEL.other_half_body)
+q_imu2 = quat_mul(pose[rear, 3:7][None], torch.tensor(MODEL.imu2_quat_in_other_half, device=pose.device)[None])[0].cpu().numpy()
 dm_ = mj_at_stand(m)
 q_mj = dm_.sensordata[m.sensor_adr[m.sensor("imu2_quat").id]:][:4]
 dot = abs(float(np.dot(q_imu2 / np.linalg.norm(q_imu2), q_mj / np.linalg.norm(q_mj))))
@@ -208,7 +221,7 @@ log(f"IsaacLab standing 3 s: root z {root_z[-1] * 1e3:.2f} mm (spawn {YAW_NOMINA
 
 
 # ---------------------------------------------------------------- 4. MuJoCo standing with the same motor model
-def mj_stand(seconds=3.0, xml=XML, root_body=RC.YAW_ROOT_BODY, z0=YAW_NOMINAL_ROOT_HEIGHT_M):
+def mj_stand(seconds=3.0, xml=XML, root_body=MODEL.root_body, z0=YAW_NOMINAL_ROOT_HEIGHT_M):
   spec = mujoco.MjSpec.from_file(str(xml))
   for name, (lo, hi) in RC.motor_joint_ranges().items():
     j = spec.joint(name); j.limited = mujoco.mjtLimited.mjLIMITED_TRUE; j.range[:] = (lo, hi)

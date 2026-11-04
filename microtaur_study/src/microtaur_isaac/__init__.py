@@ -60,10 +60,19 @@ YAW_FOOT_OFFSET_IN_BODY_M = (
 )
 
 
-def foot_offsets_in_body(joint_names) -> tuple:
-  """FOOT_OFFSET_IN_BODY_M of the robot with these joints (the yaw robot has the spine joint)."""
+def foot_offsets_in_body(variant) -> tuple:
+  """Foot sphere centres in their foot bodies, legs 1..4, of a robot_models variant (str). Legacy: a list of
+  joint names -> the yaw robot's if it has the spine joint, else the rigid robot's."""
+  if isinstance(variant, str):
+    from microtaur_common.robot_models import robot_model
+    return robot_model(variant).foot_offset_in_body_m
   from microtaur_common.robot_constants import SPINE_JOINT_NAME
-  return YAW_FOOT_OFFSET_IN_BODY_M if SPINE_JOINT_NAME in joint_names else FOOT_OFFSET_IN_BODY_M
+  return YAW_FOOT_OFFSET_IN_BODY_M if SPINE_JOINT_NAME in variant else FOOT_OFFSET_IN_BODY_M
+
+
+def env_variant(env) -> str:
+  """The robot_models variant of a running env (cfg field `variant`; "rigid" for cfgs without it)."""
+  return getattr(env.cfg, "variant", "rigid")
 
 
 ROOT_BODY_NAME = "battery"
@@ -84,6 +93,9 @@ for _name, _cfg in (
   ("Yaw-Teacher-Cur", "MicrotaurYawTeacherCurEnvCfg"), ("Yaw-Teacher-Cur-Play", "MicrotaurYawTeacherCurPlayEnvCfg"),
   ("Yaw-Teacher-Cur-Student", "MicrotaurYawTeacherCurStudentEnvCfg"),
   ("Yaw-Teacher-Cur-Student-Play", "MicrotaurYawTeacherCurStudentPlayEnvCfg"),
+  # 2026-11-04 hardware layout (robot_models "*_uno"; env_cfg.UNO_VARIANTS)
+  *((f"{tag}-Teacher-Cur{s}", f"Microtaur{tag}TeacherCur{s.replace('-', '')}EnvCfg")
+    for tag in ("RigidUno", "YawUno") for s in ("", "-Play", "-Student", "-Student-Play")),
 ):
   gym.register(
     id=f"Microtaur-Isaac-{_name}-v0",

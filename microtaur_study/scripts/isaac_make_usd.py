@@ -1,7 +1,9 @@
 """Build assets/rigid_microtaur/microtaur_rigid.usda (training, collision only) and
 microtaur_rigid_visual.usd (same plus visual meshes, for Play) from the MJCF and check them.
 
-  OMNI_KIT_ACCEPT_EULA=YES python scripts/isaac_make_usd.py      (conda env spine)
+  OMNI_KIT_ACCEPT_EULA=YES python scripts/isaac_make_usd.py [--variant rigid_uno]     (conda env spine)
+
+--variant: a rigid (no spine) microtaur_common.robot_models entry; its USDs and <usd>.check.txt go to its asset dir.
 
 Spawns the USD in IsaacLab and checks masses and inertias against MuJoCo and the
 closure gap at the stand pose; the visual USD must give identical masses and inertias.
@@ -14,10 +16,19 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import argparse  # noqa: E402
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--variant", default="rigid")
+args, _ = ap.parse_known_args()
 from isaaclab.app import AppLauncher  # noqa: E402
 
 app = AppLauncher(headless=True).app
-LOG = open(Path(__file__).resolve().parents[1] / "assets" / "rigid_microtaur" / "microtaur_rigid.usda.check.txt", "w")
+from microtaur_common.robot_models import robot_model  # noqa: E402
+
+MODEL = robot_model(args.variant)
+assert not MODEL.has_spine, "spine robots: scripts/isaac_make_usd_yaw.py --variant ..."
+LOG = open(str(MODEL.usd_path) + ".check.txt", "w")
 
 
 def log(*a):
@@ -33,12 +44,13 @@ from isaaclab.scene import InteractiveScene, InteractiveSceneCfg  # noqa: E402
 from isaaclab.utils import configclass  # noqa: E402
 from isaaclab.utils.math import quat_apply  # noqa: E402
 
-from microtaur_isaac.robot import MICROTAUR_RIGID_CFG, USD_PATH, VISUAL_USD_PATH  # noqa: E402
+from microtaur_isaac.robot import robot_cfg  # noqa: E402
 from microtaur_isaac.usd import build_usd, compile_model  # noqa: E402
 
-info = build_usd(str(USD_PATH))
+MICROTAUR_RIGID_CFG, USD_PATH, VISUAL_USD_PATH, XML = robot_cfg(args.variant), MODEL.usd_path, MODEL.visual_usd_path, MODEL.xml_path
+info = build_usd(str(USD_PATH), xml_path=XML)
 log(f"wrote {USD_PATH}: {len(info['bodies'])} bodies, loops {info['loops']}, MuJoCo total mass {info['total_mass_kg']:.6f} kg")
-build_usd(str(VISUAL_USD_PATH), visuals=True)
+build_usd(str(VISUAL_USD_PATH), visuals=True, xml_path=XML)
 log(f"wrote {VISUAL_USD_PATH} ({VISUAL_USD_PATH.stat().st_size / 1e6:.1f} MB)")
 
 
@@ -55,7 +67,7 @@ sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=0.0025, device="cud
 scene = InteractiveScene(SceneCfg(num_envs=1, env_spacing=1.0))
 sim.reset()
 robot: Articulation = scene["robot"]
-m = compile_model()
+m = compile_model(XML)
 masses = robot.root_physx_view.get_masses()[0].cpu().numpy()
 inert = robot.root_physx_view.get_inertias()[0].cpu().numpy().reshape(-1, 3, 3)
 worst_m = worst_i = 0.0

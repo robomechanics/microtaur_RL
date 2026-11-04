@@ -636,8 +636,14 @@ if __name__ == "__main__":
 _FIVE_BAR = {}
 
 
-def five_bar_for(yaw: bool) -> MicrotaurFiveBarKinematics:
-  """Shared kinematics instance of the rigid (False) or active-yaw (True) robot's legs."""
-  if yaw not in _FIVE_BAR:
-    _FIVE_BAR[yaw] = MicrotaurFiveBarKinematics(YAW_FOOT_EXTENSION_ANGLE_RAD if yaw else FOOT_EXTENSION_ANGLE_RAD)
-  return _FIVE_BAR[yaw]
+def five_bar_for(model) -> MicrotaurFiveBarKinematics:
+  """Shared kinematics instance of a robot's legs: model = a robot_models variant name (str), or (legacy)
+  True for the active-yaw robot / False for the rigid one."""
+  if isinstance(model, str):
+    from .robot_models import robot_model
+    angle = robot_model(model).foot_extension_angle_rad
+  else:
+    angle = YAW_FOOT_EXTENSION_ANGLE_RAD if model else FOOT_EXTENSION_ANGLE_RAD
+  if angle not in _FIVE_BAR:
+    _FIVE_BAR[angle] = MicrotaurFiveBarKinematics(angle)
+  return _FIVE_BAR[angle]

@@ -48,6 +48,9 @@ EXPERIMENT = "microtaur_isaac_teacher"  # teacher and student runs both log here
 TASKS = {
   "rigid": ("Microtaur-Isaac-Teacher-Cur-v0", "Microtaur-Isaac-Teacher-Cur-Student-v0"),
   "yaw": ("Microtaur-Isaac-Yaw-Teacher-Cur-v0", "Microtaur-Isaac-Yaw-Teacher-Cur-Student-v0"),
+  # 2026-11-04 hardware layout (robot_models "*_uno": MKR1000 out, UNO Q + IMU boards in, battery kept)
+  "rigid_uno": ("Microtaur-Isaac-RigidUno-Teacher-Cur-v0", "Microtaur-Isaac-RigidUno-Teacher-Cur-Student-v0"),
+  "yaw_uno": ("Microtaur-Isaac-YawUno-Teacher-Cur-v0", "Microtaur-Isaac-YawUno-Teacher-Cur-Student-v0"),
 }
 TEACHER_AGENT = "rsl_rl_sym_cfg_entry_point"  # PPO + left/right symmetry augmentation
 STUDENT_AGENT = "rsl_rl_student_v2_small_cfg_entry_point"  # MLP student, 15-frame history, distillation
@@ -76,6 +79,9 @@ STUDENT_RECIPE = [  # v4c / y1s
   "env.rewards.flat_orientation_l2.weight=-10.0", "env.rewards.feet_slide.weight=-0.1", "env.rewards.heading_tracking.weight=1.0",
   "env.curriculum.command_ranges.params.stages=[{step:0,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0},"
   "{step:1,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0},{step:2,lin_vel_x:[0.10,0.35],ang_vel_z:[-0.25,0.25],standing:0.0}]",
+  # same motor-energy weight as the teachers, every robot (Ben 2026-11-04 "大家都一样"); distillation does not use
+  # the reward, so this only makes the logged reward comparable (before: env defaults, yaw -0.005, rigid 0)
+  f"env.curriculum.energy_weight.params.stages={STAGES_ENERGY}",
 ]
 CHECK_AT = (50, 100, 200, 300, 500, 1000, 1500, 2000, 2500)
 MASTERY_SETS = (("C_fwd", ("--terrain", "C")), ("C_rev", ("--terrain", "C", "--reverse")), ("B", ("--terrain", "B")))  # early gait checks while the teacher trains
@@ -305,11 +311,13 @@ class Pipeline:
   @staticmethod
   def robot_of(ck: Path) -> str:
     y = (ck.parent / "params" / "env.yaml")
-    return "yaw" if y.exists() and re.search(r"^variant: yaw$", y.read_text(), re.M) else "rigid"
+    m = re.search(r"^variant: (\w+)$", y.read_text(), re.M) if y.exists() else None
+    return m.group(1) if m else "rigid"
 
   def bundle(self, student_ck: Path, out: Path):
     if self.robot_of(student_ck) != "rigid":
-      log("UNO Q bundle: rigid robot only for now (yaw: spine motor ID / calibration not defined) -> skipped", out / "progress.md")
+      log("UNO Q bundle: the old rigid robot only for now (spine: motor ID / calibration not defined; *_uno: "
+          "leg_polar student layout not in the bundle yet) -> skipped", out / "progress.md")
       return
     b = out / "unoq_bundle"
     rc = run([PY, SCRIPTS / "export_student_bundle.py", "--checkpoint", student_ck, "--out", b], out / "bundle.log", self.runs, 1800)
@@ -319,7 +327,7 @@ class Pipeline:
 def main():
   ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   ap.add_argument("--stage", default="all", choices=("all", "teacher", "student", "eval", "video"))
-  ap.add_argument("--robot", default="yaw", choices=("yaw", "rigid"))
+  ap.add_argument("--robot", default="yaw", choices=tuple(TASKS))
   ap.add_argument("--name", default=None, help="run name (default: <robot>_<date>)")
   ap.add_argument("--runs", default="runs", help="output root (default ./runs)")
   ap.add_argument("--iters", type=int, default=3000, help="teacher PPO iterations")

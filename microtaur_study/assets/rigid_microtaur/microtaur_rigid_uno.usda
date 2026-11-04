@@ -1,0 +1,661 @@
+#usda 1.0
+(
+    defaultPrim = "microtaur"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "microtaur" (
+    prepend apiSchemas = ["PhysicsArticulationRootAPI"]
+)
+{
+    def Xform "battery" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0028595123, -0.00069232425, 0.014078127)
+        float3 physics:diagonalInertia = (0.0028783355, 0.0026930552, 0.00035735022)
+        float physics:mass = 0.478215
+        quatf physics:principalAxes = (-0.0005694744, 0.70460266, -0.0009004012, 0.7096012)
+        quatd xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (0, 0.2, 0.2)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Cube "rl_body_collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </microtaur/materials/mu_80> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            double size = 2
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:scale = (0.115, 0.075, 0.02)
+            double3 xformOp:translate = (0, 0, 0.015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "rl_battery_collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </microtaur/materials/mu_80> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            double size = 2
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:scale = (0.04, 0.025, 0.015)
+            double3 xformOp:translate = (0.102073, 0.0085, 0.01)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+    }
+
+    def Xform "v2_leglink1_inner_screws" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07213e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.6971870627955596, -0.6971870627955596, -0.11802626601947686, -0.11802626601947686)
+        double3 xformOp:translate = (-0.0947269, 0.15704, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "spacer_for_legs" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0222093, -0.0218056, -0.00413655)
+        float3 physics:diagonalInertia = (0.00000352623, 0.00000342141, 1.21269e-7)
+        float physics:mass = 0.00544941
+        quatf physics:principalAxes = (-0.27001095, 0.6485629, 0.26516494, 0.6604149)
+        quatd xformOp:orient = (-0.02619180649838554, 0.02619180649838554, -0.7066215318488046, -0.7066215318488046)
+        double3 xformOp:translate = (-0.13855363617998245, 0.15154, 0.194223400829366)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "v2_leglink1_inner_screws_2" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.11802626601947683, -0.11802626601947683, -0.6971870627955599, -0.6971870627955599)
+        double3 xformOp:translate = (-0.0742269, 0.15704, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "leglink2_v2_with_leg_down" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.00618188, -0.0409497, -0.0015)
+        float3 physics:diagonalInertia = (0.00000415114, 0.00000403894, 1.26181e-7)
+        float physics:mass = 0.00548935
+        quatf physics:principalAxes = (0.54177296, 0.45440295, -0.54177296, 0.45440295)
+        quatd xformOp:orient = (0.3391463791588254, -0.3391463791588254, -0.620467350876304, -0.620467350876304)
+        double3 xformOp:translate = (-0.030400163820017506, 0.15154, 0.19422340082936598)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Sphere "leg1_foot_collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </microtaur/materials/mu_70> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            double radius = 0.0062
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (-0.0170594, -0.0811919, -0.0015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def Xform "v2_leglink1_inner_screws_3" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.6971870627955596, 0.6971870627955596, -0.11802626601947686, 0.11802626601947686)
+        double3 xformOp:translate = (-0.0947269, 0.24296, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "spacer_for_legs_2" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.00408993, -0.0308547, -0.00413655)
+        float3 physics:diagonalInertia = (0.00000352623, 0.00000342141, 1.21269e-7)
+        float physics:mass = 0.00544941
+        quatf physics:principalAxes = (0.52700096, 0.47019196, -0.5366309, 0.46175396)
+        quatd xformOp:orient = (0.6204673508763038, 0.6204673508763038, -0.3391463791588254, 0.3391463791588254)
+        double3 xformOp:translate = (-0.13855363617998245, 0.24846000000000001, 0.194223400829366)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "v2_leglink1_inner_screws_4" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.11802626601947683, 0.11802626601947683, -0.6971870627955599, 0.6971870627955599)
+        double3 xformOp:translate = (-0.0742269, 0.24296, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "leglink2_v2_with_leg_down_2" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.00618188, 0.0409497, -0.0015)
+        float3 physics:diagonalInertia = (0.00000415114, 0.00000403894, 1.26181e-7)
+        float physics:mass = 0.00548935
+        quatf physics:principalAxes = (0.45440295, 0.54177296, -0.45440295, 0.54177296)
+        quatd xformOp:orient = (0.3391463791588254, 0.3391463791588254, -0.620467350876304, 0.620467350876304)
+        double3 xformOp:translate = (-0.030400163820017506, 0.24846000000000001, 0.19422340082936598)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Sphere "leg2_foot_collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </microtaur/materials/mu_70> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            double radius = 0.0062
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (-0.0170594, 0.0811919, -0.0015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def Xform "v2_leglink1_inner_screws_5" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.6971870627955596, 0.6971870627955596, -0.11802626601947686, 0.11802626601947686)
+        double3 xformOp:translate = (0.0733231, 0.24296, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "spacer_for_legs_3" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0306877, 0.00519687, -0.00413655)
+        float3 physics:diagonalInertia = (0.00000352624, 0.00000342141, 1.21269e-7)
+        float physics:mass = 0.00544941
+        quatf physics:principalAxes = (0.05977509, 0.6982119, -0.058702394, 0.71097195)
+        quatd xformOp:orient = (0.18668886960334002, 0.18668886960334002, -0.6820170569466919, 0.6820170569466919)
+        double3 xformOp:translate = (0.029496363820017545, 0.24846000000000001, 0.194223400829366)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "v2_leglink1_inner_screws_6" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.11802626601947683, 0.11802626601947683, -0.6971870627955599, 0.6971870627955599)
+        double3 xformOp:translate = (0.0938231, 0.24296, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "leglink2_v2_with_leg_down_3" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.041407, 0.00074727, -0.0015)
+        float3 physics:diagonalInertia = (0.00000415114, 0.00000403894, 1.26181e-7)
+        float physics:mass = 0.00548935
+        quatf physics:principalAxes = (-0.0152633, 0.706942, 0.0152633, 0.706942)
+        quatd xformOp:orient = (-0.2431718935514519, -0.2431718935514519, -0.6639784862377708, 0.6639784862377708)
+        double3 xformOp:translate = (0.1376498361799825, 0.24846000000000001, 0.19422340082936598)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Sphere "leg3_foot_collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </microtaur/materials/mu_70> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            double radius = 0.0062
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0.0827296, 0.00624248, -0.0015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def Xform "v2_leglink1_inner_screws_7" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.6971870627955596, -0.6971870627955596, -0.11802626601947686, -0.11802626601947686)
+        double3 xformOp:translate = (0.0733231, 0.15704, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "spacer_for_legs_4" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0309161, 0.00359666, -0.00413655)
+        float3 physics:diagonalInertia = (0.00000352624, 0.00000342141, 1.21269e-7)
+        float physics:mass = 0.00544941
+        quatf physics:principalAxes = (0.041292906, 0.6995011, -0.040551905, 0.7122841)
+        quatd xformOp:orient = (0.28119207433408133, -0.28119207433408133, -0.6487919676843235, -0.6487919676843235)
+        double3 xformOp:translate = (0.029496363820017545, 0.15154, 0.194223400829366)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "v2_leglink1_inner_screws_8" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0206341, -1.07214e-9, -0.00360397)
+        float3 physics:diagonalInertia = (0.0000012154, 0.00000114446, 8.15873e-8)
+        float physics:mass = 0.00375379
+        quatf physics:principalAxes = (1.11573996e-7, 0.697469, 1.45053e-7, 0.71661496)
+        quatd xformOp:orient = (0.11802626601947683, -0.11802626601947683, -0.6971870627955599, -0.6971870627955599)
+        double3 xformOp:translate = (0.0938231, 0.15704, 0.20950000000000002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Xform "leglink2_v2_with_leg_down_4" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.041407, -0.00074727, -0.0015)
+        float3 physics:diagonalInertia = (0.00000415114, 0.00000403894, 1.26181e-7)
+        float physics:mass = 0.00548935
+        quatf physics:principalAxes = (0.0152633, 0.706942, -0.0152633, 0.706942)
+        quatd xformOp:orient = (-0.2431718935514519, 0.2431718935514519, -0.6639784862377708, -0.6639784862377708)
+        double3 xformOp:translate = (0.1376498361799825, 0.15154, 0.19422340082936598)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Sphere "leg4_foot_collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </microtaur/materials/mu_70> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            double radius = 0.0062
+            quatd xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0.0827296, -0.00624248, -0.0015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def "materials"
+    {
+        def Material "mu_80" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:dynamicFriction = 0.8
+            float physics:restitution = 0
+            float physics:staticFriction = 0.8
+        }
+
+        def Material "mu_70" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:dynamicFriction = 0.7
+            float physics:restitution = 0
+            float physics:staticFriction = 0.7
+        }
+    }
+
+    def "joints"
+    {
+        def PhysicsRevoluteJoint "leg1_a_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws>
+            point3f physics:localPos0 = (-0.0947269, -0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.65328145, -0.65328145, -0.27059817, -0.27059817)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -17.188734
+            float physics:upperLimit = 68.75494
+        }
+
+        def PhysicsRevoluteJoint "leg1_b_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws>
+            rel physics:body1 = </microtaur/spacer_for_legs>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.44679394, 0, 0, -0.89463687)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg1_e_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_2>
+            point3f physics:localPos0 = (-0.0742269, -0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.27059817, -0.27059817, -0.65328145, -0.65328145)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -68.75494
+            float physics:upperLimit = 17.188734
+        }
+
+        def PhysicsRevoluteJoint "leg1_d_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_2>
+            rel physics:body1 = </microtaur/leglink2_v2_with_leg_down>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg2_a_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_3>
+            point3f physics:localPos0 = (-0.0947269, 0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.65328145, 0.65328145, -0.27059817, 0.27059817)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -68.75494
+            float physics:upperLimit = 17.188734
+        }
+
+        def PhysicsRevoluteJoint "leg2_b_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_3>
+            rel physics:body1 = </microtaur/spacer_for_legs_2>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg2_e_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_4>
+            point3f physics:localPos0 = (-0.0742269, 0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.27059817, 0.27059817, -0.65328145, 0.65328145)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -17.188734
+            float physics:upperLimit = 68.75494
+        }
+
+        def PhysicsRevoluteJoint "leg2_d_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_4>
+            rel physics:body1 = </microtaur/leglink2_v2_with_leg_down_2>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg3_a_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_5>
+            point3f physics:localPos0 = (0.0733231, 0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.65328145, 0.65328145, -0.27059817, 0.27059817)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -68.75494
+            float physics:upperLimit = 17.188734
+        }
+
+        def PhysicsRevoluteJoint "leg3_b_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_5>
+            rel physics:body1 = </microtaur/spacer_for_legs_3>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.6942759, 0, 0, 0.7197089)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg3_e_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_6>
+            point3f physics:localPos0 = (0.0938231, 0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.27059817, 0.27059817, -0.65328145, 0.65328145)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -17.188734
+            float physics:upperLimit = 68.75494
+        }
+
+        def PhysicsRevoluteJoint "leg3_d_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_6>
+            rel physics:body1 = </microtaur/leglink2_v2_with_leg_down_3>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.6590122, 0, 0, 0.75213224)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg4_a_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_7>
+            point3f physics:localPos0 = (0.0733231, -0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.65328145, -0.65328145, -0.27059817, -0.27059817)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -17.188734
+            float physics:upperLimit = 68.75494
+        }
+
+        def PhysicsRevoluteJoint "leg4_b_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_7>
+            rel physics:body1 = </microtaur/spacer_for_legs_4>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.7890119, 0, 0, -0.6143779)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "leg4_e_joint_act" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/battery>
+            rel physics:body1 = </microtaur/v2_leglink1_inner_screws_8>
+            point3f physics:localPos0 = (0.0938231, -0.04296, 0.0095)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.27059817, -0.27059817, -0.65328145, -0.65328145)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -68.75494
+            float physics:upperLimit = 17.188734
+        }
+
+        def PhysicsRevoluteJoint "leg4_d_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 0
+            float drive:angular:physics:stiffness = 0
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/v2_leglink1_inner_screws_8>
+            rel physics:body1 = </microtaur/leglink2_v2_with_leg_down_4>
+            point3f physics:localPos0 = (-0.0464129, 0, -0.0055)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.6590122, 0, 0, -0.75213224)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+
+    def "loops"
+    {
+        def PhysicsRevoluteJoint "closing_leg1_c_joint_1"
+        {
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/leglink2_v2_with_leg_down>
+            rel physics:body1 = </microtaur/spacer_for_legs>
+            uniform bool physics:excludeFromArticulation = 1
+            point3f physics:localPos0 = (-0.00930745, -0.070216, -0.003)
+            point3f physics:localPos1 = (-0.0505419, -0.049623, -0.003)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "closing_leg2_c_joint_1"
+        {
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/leglink2_v2_with_leg_down_2>
+            rel physics:body1 = </microtaur/spacer_for_legs_2>
+            uniform bool physics:excludeFromArticulation = 1
+            point3f physics:localPos0 = (-0.00930745, 0.070216, -0.003)
+            point3f physics:localPos1 = (-0.00930745, -0.070216, -0.003)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "closing_leg3_c_joint_1"
+        {
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/leglink2_v2_with_leg_down_3>
+            rel physics:body1 = </microtaur/spacer_for_legs_3>
+            uniform bool physics:excludeFromArticulation = 1
+            point3f physics:localPos0 = (0.0708302, 0, -0.003)
+            point3f physics:localPos1 = (-0.0698359, 0.0118265, -0.003)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "closing_leg4_c_joint_1"
+        {
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </microtaur/leglink2_v2_with_leg_down_4>
+            rel physics:body1 = </microtaur/spacer_for_legs_4>
+            uniform bool physics:excludeFromArticulation = 1
+            point3f physics:localPos0 = (0.0708302, 0, -0.003)
+            point3f physics:localPos1 = (-0.0703557, 0.00818491, -0.003)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+}
+

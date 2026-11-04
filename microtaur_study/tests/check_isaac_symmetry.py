@@ -29,7 +29,7 @@ ap.add_argument("--out", required=True)
 ap.add_argument("--steps", type=int, default=30)
 ap.add_argument("--action-std", type=float, default=0.5)
 ap.add_argument("--copy", action="store_true", help="control: env 1 = exact copy of env 0, same actions (no mirror)")
-ap.add_argument("--variant", default="rigid", choices=("rigid", "yaw"))
+ap.add_argument("--variant", default="rigid", help="a microtaur_common.robot_models entry")
 ap.add_argument("--leg-polar", action="store_true")
 ap.add_argument("--student", action="store_true")
 AppLauncher.add_app_launcher_args(ap)
@@ -60,14 +60,15 @@ from microtaur_isaac.usd import compile_model  # noqa: E402
 PARTNER = {1: 2, 2: 1, 3: 4, 4: 3}
 
 # --- 1. model symmetry ------------------------------------------------------------
-from microtaur_common.robot_constants import YAW_ROOT_BODY, YAW_XML_PATH  # noqa: E402
+from microtaur_common.robot_models import robot_model  # noqa: E402
 
-YAW = args.variant == "yaw"
-m = compile_model(YAW_XML_PATH if YAW else None)
+MODEL = robot_model(args.variant)
+YAW = MODEL.has_spine  # any spine robot
+m = compile_model(MODEL.xml_path)
 d = mujoco.MjData(m)
 from microtaur_common.kinematics import FULL_JOINT_NAMES  # noqa: E402
 from microtaur_common.reset import NOMINAL_FULL_Q  # noqa: E402
-ROOT = YAW_ROOT_BODY if YAW else "battery"
+ROOT = MODEL.root_body
 free = next(j for j in range(m.njnt) if m.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE)
 d.qpos[m.jnt_qposadr[free] + 3] = 1.0
 for n, q in zip(FULL_JOINT_NAMES, NOMINAL_FULL_Q.reshape(16)):

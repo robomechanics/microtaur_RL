@@ -53,11 +53,12 @@ from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_mul
 from isaaclab.utils.noise import UniformNoiseCfg
 
-from microtaur_common.robot_constants import LEG_JOINT_NAMES, SPINE_JOINT_NAME, YAW_IMU2_QUAT_IN_REAR, YAW_REAR_BODY
+from microtaur_common.robot_constants import LEG_JOINT_NAMES, SPINE_JOINT_NAME
+from microtaur_common.robot_models import robot_model
 from microtaur_common.sim2real import Sim2RealStage
 from microtaur_common.task_params import COMMAND_NAME
 
-from .. import FOOT_BODY_NAMES, foot_offsets_in_body
+from .. import FOOT_BODY_NAMES, env_variant, foot_offsets_in_body
 from .contact import foot_contact_timers
 
 if TYPE_CHECKING:
@@ -98,8 +99,8 @@ def legs_cfg() -> SceneEntityCfg:
 
 
 def motors_cfg(variant: str = "rigid") -> SceneEntityCfg:
-  """All motors of the variant in canonical order: the 8 leg motors, + the spine last on the yaw robot."""
-  names = list(LEG_JOINT_NAMES) + ([SPINE_JOINT_NAME] if variant == "yaw" else [])
+  """All motors of the variant in canonical order: the 8 leg motors, + the spine last on a spine robot."""
+  names = list(LEG_JOINT_NAMES) + ([SPINE_JOINT_NAME] if robot_model(variant).has_spine else [])
   return SceneEntityCfg(ROBOT, joint_names=names, preserve_order=True)
 
 
@@ -161,7 +162,7 @@ def foot_centres_w(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.T
   d = robot.data
   pos = d.body_link_pos_w[:, asset_cfg.body_ids]
   quat = d.body_link_quat_w[:, asset_cfg.body_ids]
-  offset = torch.tensor(foot_offsets_in_body(robot.joint_names), device=pos.device, dtype=pos.dtype).expand_as(pos)
+  offset = torch.tensor(foot_offsets_in_body(env_variant(env)), device=pos.device, dtype=pos.dtype).expand_as(pos)
   return pos + quat_apply(quat.reshape(-1, 4), offset.reshape(-1, 3)).reshape(pos.shape)
 
 
@@ -228,16 +229,18 @@ def foot_fk(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, biased: bool = Tr
   q = d.joint_pos[:, asset_cfg.joint_ids]
   if biased:
     q = q + encoder_bias(env, q.shape[1])
-  fx, fz = five_bar_for(SPINE_JOINT_NAME in robot.joint_names).forward_torch(q[:, 0::2], q[:, 1::2])
+  fx, fz = five_bar_for(env_variant(env)).forward_torch(q[:, 0::2], q[:, 1::2])
   return torch.stack((fx, fz), dim=-1).reshape(q.shape[0], 8)
 
 
 def _imu2_frame(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg):
-  """(orientation, angular velocity in world) of the yaw robot's rear IMU: rear body x the site's rotation."""
+  """(orientation, angular velocity in world) of a spine robot's second IMU, on the trunk half that is not the
+  root (yaw: the rear half): that body x the site's rotation (robot_models)."""
   robot = env.scene[asset_cfg.name]
-  bid = robot.body_names.index(YAW_REAR_BODY)
+  model = robot_model(env_variant(env))
+  bid = robot.body_names.index(model.other_half_body)
   q_body = robot.data.body_link_quat_w[:, bid]
-  q_site = torch.tensor(YAW_IMU2_QUAT_IN_REAR, device=q_body.device, dtype=q_body.dtype).expand_as(q_body)
+  q_site = torch.tensor(model.imu2_quat_in_other_half, device=q_body.device, dtype=q_body.dtype).expand_as(q_body)
   return quat_mul(q_body, q_site), robot.data.body_link_ang_vel_w[:, bid]
 
 
@@ -434,14 +437,12 @@ def adapt_student_group(group, variant: str = "rigid", leg_polar_obs: bool = Fal
   """The variant's student group from student_obs_cfg(stage): yaw -> joint terms over the 9 motors and the
   rear-IMU slot reading IMU 2 (same noise as IMU 1); leg_polar_obs -> virtual legs appended (encoder-biased,
   FK noise). Used by make_observations_cfg and by eval scripts that add the group to a play cfg."""
-  if variant == "yaw":
+  if robot_model(variant).has_spine:
     for name in ("joint_pos", "joint_vel"):
       t = getattr(group, name)
-      t.params = {**t.params, "asset_cfg": motors_cfg("yaw")}
+      t.params = {**t.params, "asset_cfg": motors_cfg(variant)}
     group.imu2_projected_gravity = ObsTerm(func=imu2_projected_gravity, noise=group.projected_gravity.noise)
     group.imu2_base_ang_vel = ObsTerm(func=imu2_ang_vel, noise=group.base_ang_vel.noise)
-  elif variant != "rigid":
-    raise ValueError(f"unknown robot variant {variant!r}")
   if leg_polar_obs:
     group.leg_polar = ObsTerm(func=leg_polar, params={"asset_cfg": legs_cfg(), "biased": True})
     if stage is not None:  # joint-angle noise -> r via the lever, theta directly
@@ -464,15 +465,13 @@ def make_observations_cfg(
     cfg.teacher = teacher_obs_cfg(height_scan=True, stage=None if play else stage)
   if student:
     cfg.student = student_obs_cfg(stage)
-  if variant == "yaw":
+  if robot_model(variant).has_spine:
     for g in (cfg.policy, cfg.critic, cfg.teacher):
       if g is None:
         continue
       for name in ("joint_pos", "joint_vel"):
         t = getattr(g, name)
-        t.params = {**t.params, "asset_cfg": motors_cfg("yaw")}
-  elif variant != "rigid":
-    raise ValueError(f"unknown robot variant {variant!r}")
+        t.params = {**t.params, "asset_cfg": motors_cfg(variant)}
   if cfg.student is not None:
     adapt_student_group(cfg.student, variant, leg_polar_obs, stage)
   if leg_polar_obs:

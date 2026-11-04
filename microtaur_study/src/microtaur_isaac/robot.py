@@ -120,3 +120,24 @@ MICROTAUR_YAW_CFG = MICROTAUR_RIGID_CFG.replace(
     ),
   },
 )
+
+
+def robot_cfg(variant: str = "rigid") -> ArticulationCfg:
+  """The articulation of a microtaur_common.robot_models entry: the rigid or the spine robot's actuators and
+  joints, with the model's own USD and stand height ("rigid" / "yaw" are the two cfgs above, unchanged)."""
+  from microtaur_common.robot_models import robot_model
+
+  if variant == "rigid":
+    return MICROTAUR_RIGID_CFG
+  if variant == "yaw":
+    return MICROTAUR_YAW_CFG
+  m = robot_model(variant)
+  base = MICROTAUR_YAW_CFG if m.has_spine else MICROTAUR_RIGID_CFG
+  return base.replace(spawn=base.spawn.replace(usd_path=str(m.usd_path)),
+                      init_state=base.init_state.replace(pos=(0.0, 0.0, m.nominal_root_height_m)))
+
+
+def visual_usd_path(variant: str = "rigid"):
+  from microtaur_common.robot_models import robot_model
+
+  return robot_model(variant).visual_usd_path

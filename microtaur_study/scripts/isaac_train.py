@@ -34,7 +34,10 @@ def isaaclab_dir() -> Path:
 
 
 TRAIN = isaaclab_dir() / REL
-TRAIN_MIB_PER_ENV = 4900 / 2048  # measured: a 2048-env teacher or student takes ~4.9 GB (Kit + PhysX + torch)
+# GPU memory of a training, measured 2026-11-04 (5-iteration Teacher-Cur runs, nvidia-smi peak): 1024 envs 2827 MiB
+# with the env's PhysX buffer sizes (env_cfg: contact 2^22, found/lost aggregate pairs 2^23; IsaacLab's defaults
+# 2^23 / 2^25 took 4043 at 1024 and 4899 at 2048 envs, i.e. 0.84 MiB per env on top of a fixed part).
+TRAIN_FIXED_MIB, TRAIN_MIB_PER_ENV = 2000, 0.85
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from microtaur_common.gpu import gpu_allows  # noqa: E402
@@ -42,7 +45,7 @@ from microtaur_common.gpu import gpu_allows  # noqa: E402
 device = sys.argv[sys.argv.index("--device") + 1] if "--device" in sys.argv else "cuda:0"
 if device.startswith("cuda"):
   n = int(sys.argv[sys.argv.index("--num_envs") + 1]) if "--num_envs" in sys.argv else 4096
-  if not gpu_allows(int(TRAIN_MIB_PER_ENV * n), f"a {n}-env training"):
+  if not gpu_allows(int(TRAIN_FIXED_MIB + TRAIN_MIB_PER_ENV * n), f"a {n}-env training"):
     sys.exit("isaac_train.py: refused, the GPU memory cap would be exceeded (one training at a time)")
 
 sys.path.insert(0, str(TRAIN.parent))  # train.py imports its sibling cli_args

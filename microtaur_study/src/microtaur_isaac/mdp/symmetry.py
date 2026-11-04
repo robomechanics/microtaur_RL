@@ -9,7 +9,8 @@ Mirror of the robot (reflection y -> -y):
   legs     leg1 RR <-> leg2 RL, leg4 FR <-> leg3 FL; every joint angle of the partner
            leg is negated (LEG_SIGNS flip between mirror legs, so FK(leg2, -a, -e) is
            FK(leg1, a, e) in the shared leg-plane frame; checked in tests/check_isaac_symmetry.py)
-  spine    (yaw robot, 9th motor value) negated: a left yaw is a right yaw in the mirror
+  spine    (spine robots, 9th motor value) x robot_models spine_mirror_sign: a left yaw / roll bend is a
+           right one in the mirror (negated); a pitch bend is its own mirror (kept)
   leg-plane terms (foot_fk, leg_polar)  per-leg values are unchanged by the mirror: only the legs swap
   vectors  linear velocity / gravity / forces (x, y, z) -> (x, -y, z);
            angular velocity (x, y, z) -> (-x, y, -z); command (vx, vy, wz) -> (vx, -vy, -wz)
@@ -37,21 +38,30 @@ _JOINT_TERMS = ("joint_pos", "joint_vel", "actions")
 _FOOT_TERMS = ("foot_height", "foot_air_time", "foot_contact")
 
 
-def mirror_joints(x: torch.Tensor) -> torch.Tensor:
-  """[..., 8] leg motor values in canonical order (or [..., 9] with the yaw robot's spine last) -> mirrored robot."""
+def mirror_joints(x: torch.Tensor, spine_sign: float = -1.0) -> torch.Tensor:
+  """[..., 8] leg motor values in canonical order (or [..., 9] with a spine robot's spine last) -> mirrored robot.
+  spine_sign: the spine's mirror sign (robot_models.RobotModel.spine_mirror_sign; -1 yaw / roll, +1 pitch)."""
   legs = -x[..., list(JOINT_PERM)]
   if x.shape[-1] == 8:
     return legs
   if x.shape[-1] == 9:
-    return torch.cat((legs, -x[..., 8:9]), dim=-1)
+    return torch.cat((legs, spine_sign * x[..., 8:9]), dim=-1)
   raise ValueError(f"mirror_joints: expected 8 or 9 motor values, got {x.shape[-1]}")
+
+
+def _spine_sign(env) -> float:
+  from microtaur_common.robot_models import robot_model
+
+  from .. import env_variant
+  m = robot_model(env_variant(env))
+  return m.spine_mirror_sign if m.has_spine else -1.0
 
 
 def _mirror_term(name: str, x: torch.Tensor, env) -> torch.Tensor:
   if name in _VEC_SIGN:
     return x * torch.tensor(_VEC_SIGN[name], device=x.device, dtype=x.dtype)
   if name in _JOINT_TERMS:
-    return mirror_joints(x)
+    return mirror_joints(x, _spine_sign(env))
   if name in _FOOT_TERMS:
     return x[:, list(FOOT_PERM)]
   if name in ("foot_fk", "leg_polar"):  # [N, 4 legs x 2]
@@ -101,5 +111,5 @@ def compute_symmetric_states(env, obs=None, actions=None):
       obs_aug[group][b:] = mirror_group(env, group, obs[group])
   act_aug = None
   if actions is not None:
-    act_aug = torch.cat((actions, mirror_joints(actions)), dim=0)
+    act_aug = torch.cat((actions, mirror_joints(actions, _spine_sign(env))), dim=0)
   return obs_aug, act_aug
