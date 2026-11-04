@@ -162,7 +162,10 @@ log(f"closure gap at stand, max over 8 sites: {max(gaps):.2e} m")
 rear = robot.body_names.index(MODEL.other_half_body)
 q_imu2 = quat_mul(pose[rear, 3:7][None], torch.tensor(MODEL.imu2_quat_in_other_half, device=pose.device)[None])[0].cpu().numpy()
 dm_ = mj_at_stand(m)
-q_mj = dm_.sensordata[m.sensor_adr[m.sensor("imu2_quat").id]:][:4]
+# MuJoCo framequat sensor of the site on the other half (yaw: imu2_site; roll: imu_site)
+_s2 = next(i for i in range(m.nsensor) if m.sensor_type[i] == mujoco.mjtSensor.mjSENS_FRAMEQUAT
+           and m.body(int(m.site_bodyid[m.sensor_objid[i]])).name == MODEL.other_half_body)
+q_mj = dm_.sensordata[m.sensor_adr[_s2]:][:4]
 dot = abs(float(np.dot(q_imu2 / np.linalg.norm(q_imu2), q_mj / np.linalg.norm(q_mj))))
 log(f"IMU 2 orientation at stand: IsaacLab {np.round(q_imu2, 4).tolist()} vs MuJoCo imu2_quat {np.round(q_mj, 4).tolist()} -> angle {math.degrees(2 * math.acos(min(1.0, dot))):.3f} deg")
 

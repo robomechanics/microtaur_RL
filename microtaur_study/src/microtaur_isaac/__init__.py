@@ -95,7 +95,7 @@ for _name, _cfg in (
   ("Yaw-Teacher-Cur-Student-Play", "MicrotaurYawTeacherCurStudentPlayEnvCfg"),
   # 2026-11-04 hardware layout (robot_models "*_uno"; env_cfg.UNO_VARIANTS)
   *((f"{tag}-Teacher-Cur{s}", f"Microtaur{tag}TeacherCur{s.replace('-', '')}EnvCfg")
-    for tag in ("RigidUno", "YawUno") for s in ("", "-Play", "-Student", "-Student-Play")),
+    for tag in ("RigidUno", "YawUno", "RollUno") for s in ("", "-Play", "-Student", "-Student-Play")),
 ):
   gym.register(
     id=f"Microtaur-Isaac-{_name}-v0",

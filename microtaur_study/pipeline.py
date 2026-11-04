@@ -51,6 +51,7 @@ TASKS = {
   # 2026-11-04 hardware layout (robot_models "*_uno": MKR1000 out, UNO Q + IMU boards in, battery kept)
   "rigid_uno": ("Microtaur-Isaac-RigidUno-Teacher-Cur-v0", "Microtaur-Isaac-RigidUno-Teacher-Cur-Student-v0"),
   "yaw_uno": ("Microtaur-Isaac-YawUno-Teacher-Cur-v0", "Microtaur-Isaac-YawUno-Teacher-Cur-Student-v0"),
+  "roll_uno": ("Microtaur-Isaac-RollUno-Teacher-Cur-v0", "Microtaur-Isaac-RollUno-Teacher-Cur-Student-v0"),
 }
 TEACHER_AGENT = "rsl_rl_sym_cfg_entry_point"  # PPO + left/right symmetry augmentation
 STUDENT_AGENT = "rsl_rl_student_v2_small_cfg_entry_point"  # MLP student, 15-frame history, distillation

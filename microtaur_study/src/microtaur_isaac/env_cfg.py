@@ -28,7 +28,7 @@ from microtaur_common.task_params import EPISODE_S, POLICY_DT_S
 
 from microtaur_common.robot_constants import SPINE_JOINT_NAME
 
-from . import ROOT_BODY_NAME
+from . import FOOT_BODY_NAMES, ROOT_BODY_NAME
 from .mdp import commands as C
 from .mdp import events as E
 from .mdp import observations as O
@@ -405,6 +405,8 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
     self.commands.twist = C.make_twist_command_cfg(play=self.play)
     self.rewards = R.make_rewards_cfg(self.variant)
     self.terminations = T.make_terminations_cfg(self.variant)
+    if tuple(model.foot_body_names) != tuple(FOOT_BODY_NAMES):  # this MJCF's foot bodies, still in leg order 1..4
+      _retarget_feet((self.observations, self.rewards), list(model.foot_body_names))
     self.events = _Events()
     for k, v in _events(s2r, self.play, self.rough, root_body=root_body, num_motors=9 if spine else 8).items():
       setattr(self.events, k, v)
@@ -440,6 +442,20 @@ class MicrotaurFlatEnvCfg(ManagerBasedRLEnvCfg):
       self.viewer.env_index = 0
       self.viewer.eye = (0.30, -0.45, 0.18)
       self.viewer.lookat = (0.0, 0.0, 0.04)
+
+
+def _retarget_feet(cfgs, names: list) -> None:
+  """Point every term param that selects the rigid model's foot bodies (observations.feet_body_cfg /
+  feet_sensor_cfg) at another model's foot bodies, same leg order."""
+  rigid = list(FOOT_BODY_NAMES)
+  for cfg in cfgs:
+    groups = [g for g in vars(cfg).values() if g is not None and hasattr(g, "__dict__")]
+    for group in groups:
+      terms = [group] if hasattr(group, "params") else [t for t in vars(group).values() if hasattr(t, "params")]
+      for term in terms:
+        for k, v in (term.params or {}).items():
+          if isinstance(v, SceneEntityCfg) and list(v.body_names or []) == rigid:
+            term.params[k] = v.replace(body_names=list(names))
 
 
 @configclass
@@ -601,7 +617,7 @@ class MicrotaurYawTeacherCurStudentPlayEnvCfg(MicrotaurYawTeacherCurPlayEnvCfg):
 # One Teacher-Cur / -Play / -Student / -Student-Play cfg per model, all with the same observations: leg_polar_obs
 # on for every robot (the yaw tasks had it and the rigid ones did not, 10-29 .. 11-04). No per-robot energy
 # default: the pipeline recipe sets the same motor-energy ramp for every robot, teacher and student.
-UNO_VARIANTS = {"rigid_uno": "RigidUno", "yaw_uno": "YawUno"}
+UNO_VARIANTS = {"rigid_uno": "RigidUno", "yaw_uno": "YawUno", "roll_uno": "RollUno"}
 _UNO_BASES = {"TeacherCurEnvCfg": MicrotaurTeacherCurEnvCfg, "TeacherCurPlayEnvCfg": MicrotaurTeacherCurPlayEnvCfg,
               "TeacherCurStudentEnvCfg": MicrotaurTeacherCurStudentEnvCfg,
               "TeacherCurStudentPlayEnvCfg": MicrotaurTeacherCurStudentPlayEnvCfg}

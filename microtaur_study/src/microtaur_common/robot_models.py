@@ -89,6 +89,18 @@ MODELS: dict[str, RobotModel] = {
                           visual_usd="microtaur_rigid_uno_visual.usd", total_mass_kg=0.55200036, **_RIGID),
   "yaw_uno": RobotModel("yaw_uno", xml="robot_uno_battery.xml", usd="microtaur_yaw_uno.usda",
                         visual_usd="microtaur_yaw_uno_visual.usd", total_mass_kg=0.73878336, **_YAW),
+  # Active roll (upstream "active twist"): spine axis = -x of the root; the ROOT is the rear half (legs 1, 2,
+  # root IMU = the MJCF's imu2_site), the front half (legs 3, 4) carries the second IMU (the MJCF's imu_site) and
+  # sits 11.5 mm higher. Legs as the yaw robot's (same parts, foot angle, offsets), foot bodies in another order.
+  # Spine actuator assumed the yaw robot's XL330-M288 (same joint parameters in the MJCF; not measured).
+  "roll_uno": RobotModel(
+    "roll_uno", asset_dir=_ASSETS / "active_twist_microtaur", xml="robot_uno_battery.xml", usd="microtaur_roll_uno.usda",
+    visual_usd="microtaur_roll_uno_visual.usd", root_body="twisting_microtaur_bottom_half_motor_mount",
+    total_mass_kg=0.49384336, nominal_root_height_m=0.08079193565950653, hip_z_root_m=(0.0, 0.0, 0.0115, 0.0115),
+    foot_body_names=("leglink2_v2_with_leg_down_3", "leglink2_v2_with_leg_down_4", "leglink2_v2_with_leg_down",
+                     "leglink2_v2_with_leg_down_2"),
+    foot_offset_in_body_m=_YAW_FOOT_OFFSETS, foot_extension_angle_rad=math.radians(5.40982), spine="roll",
+    other_half_body="twisting_microtaur_top_half", imu2_quat_in_other_half=(0.707107, 0.0, 0.707107, 0.0)),
 }
 
 
