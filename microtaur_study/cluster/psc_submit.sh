@@ -7,7 +7,8 @@
 #   CONFIRM_SU=yes bash microtaur_study/cluster/psc_submit.sh ...
 #   MT_DEPEND=afterok:<preflight job id> ... plan <plan.txt>                 # run only if the preflight passes
 #
-# Plan file: one run per line, "<name> <yaw|rigid> [seed=N] [Hydra override ...]" (overrides without spaces);
+# Plan file: one run per line, "<name> <robot> [seed=N] [iters=N] [Hydra override ...]" (overrides without spaces;
+# robot = a pipeline.py --robot choice);
 # "= <override ...>" lines set overrides added to every later run line; # comments. A run whose $MT_RUNS/<name>
 # exists is skipped (no double submission).
 set -euo pipefail

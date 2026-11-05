@@ -1,0 +1,7 @@
+# 2026-11-04 batch (Ben): battery / UNO Q hardware layout (robot_models *_uno), rigid / yaw / roll side by side
+# (pitch waits for Aryan: its right legs are assembled front/back mirrored). Same recipe for all three = local y8 / r9
+# + per-env speed-based terrain levels; 6000 teacher iterations + the 300-iteration student, seed 42 (default).
+= iters=6000 env.curriculum.command_ranges.params.stages=[{step:0,lin_vel_x:[0.10,0.20],ang_vel_z:[-0.25,0.25],standing:0.0},{step:4000,lin_vel_x:[0.10,0.30],ang_vel_z:[-0.25,0.25],standing:0.0},{step:10000,lin_vel_x:[0.0,0.35],ang_vel_z:[-0.8,0.8],standing:0.0}] env.rewards.track_ang_vel_z.weight=1.5 env.curriculum.terrain_levels.params.gate=complete env.curriculum.terrain_levels.params.gate_success=0.98 env.curriculum.terrain_levels.params.gate_min_episodes=128 env.c_reverse_frac=0.5 env.curriculum.terrain_levels.params.gate_start_iter=500 env.curriculum.terrain_levels.params.gate_min_iters=400 env.curriculum.terrain_levels.params.per_env=speed
+ru1 rigid_uno
+yu1 yaw_uno
+roll1 roll_uno

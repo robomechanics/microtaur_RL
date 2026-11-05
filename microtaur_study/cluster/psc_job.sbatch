@@ -2,7 +2,7 @@
 # One Microtaur job on PSC Bridges-2 (1 GPU, GPU-shared) in the shared Isaac Lab image. Submit through psc_submit.sh
 # (it sets the GPU, CPUs, walltime and job name):
 #
-#   pipeline <name> <robot> [seed=N] [Hydra overrides...]  teacher + student, pipeline.py --train-only (no cameras):
+#   pipeline <name> <robot> [seed=N] [iters=N] [Hydra overrides...]  teacher + student, pipeline.py --train-only (no cameras):
 #                                                 checkpoints land in $MT_RUNS/logs/rsl_rl/microtaur_isaac_teacher/;
 #                                                 evaluate them on rml3 with pipeline.py --stage eval
 #   preflight                                     versions, a --smoke --train-only run of both stages (yaw, 256 envs),
@@ -70,8 +70,8 @@ mkdir -p "$MT_RUNS/$NAME"
   printf 'override: %s\n' "$@"
   echo "repo=$(git -C "$MT_REPO" --no-pager log --oneline -1)"
   nvidia-smi --query-gpu=name,driver_version --format=csv,noheader; } > "$MT_RUNS/$NAME/job_${SLURM_JOB_ID}.txt"
-ov=(); extra=()   # seed=N -> --seed N; everything else is a Hydra override
-for x in "$@"; do case "$x" in seed=*) extra+=(--seed "${x#seed=}") ;; *) ov+=("$x") ;; esac; done
+ov=(); extra=()   # seed=N -> --seed N; iters=N -> --iters N (teacher iterations); everything else is a Hydra override
+for x in "$@"; do case "$x" in seed=*) extra+=(--seed "${x#seed=}") ;; iters=*) extra+=(--iters "${x#iters=}") ;; *) ov+=("$x") ;; esac; done
 [ ${#ov[@]} -gt 0 ] && ov=(--override "${ov[@]}")
 run "$MT_RUNS/$NAME/pipeline_${SLURM_JOB_ID}.out" "${PIPE[@]}" --robot "$ROBOT" --name "$NAME" "${extra[@]}" "${ov[@]}"
 if grep -q "DONE:" "$MT_RUNS/$NAME/progress.md" 2>/dev/null; then CLEAN=1; echo "[mt] $(date -Is) $NAME done"
