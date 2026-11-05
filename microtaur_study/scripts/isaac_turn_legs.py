@@ -63,7 +63,7 @@ t.env_origins[:] = t.terrain_origins[0, t.terrain_types]
 w = RslRlVecEnvWrapper(env)  # resets: robots spawn at the new origins
 policy, policy_reset = load_policy(w, args.checkpoint)
 robot, cmd = env.scene["robot"], env.command_manager.get_term("twist")
-fc = feet_sensor_cfg()
+fc = feet_sensor_cfg(cfg.variant)
 fc.resolve(env.scene)
 yaw = SPINE_JOINT_NAME in robot.joint_names
 mids = [robot.joint_names.index(n) for n in LEG_JOINT_NAMES]

@@ -51,6 +51,7 @@ from isaaclab.envs import ManagerBasedRLEnv  # noqa: E402
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper  # noqa: E402
 
 from microtaur_common.robot_constants import SPINE_JOINT_NAME  # noqa: E402
+from microtaur_common.robot_models import robot_model  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
 from microtaur_isaac.mdp.contact import foot_contact_timers  # noqa: E402
 from microtaur_isaac.mdp.observations import feet_sensor_cfg  # noqa: E402
@@ -76,9 +77,10 @@ t.env_origins[:] = t.terrain_origins[0, 0]
 w = RslRlVecEnvWrapper(env)  # resets: robots spawn at the new origins
 policy, policy_reset = load_policy(w, args.checkpoint)
 robot, cmd = env.scene["robot"], env.command_manager.get_term("twist")
-fc = feet_sensor_cfg()
+fc = feet_sensor_cfg(cfg.variant)
 fc.resolve(env.scene)
-yaw = SPINE_JOINT_NAME in robot.joint_names
+yaw = SPINE_JOINT_NAME in robot.joint_names  # any spine robot (the spine-locked groups)
+yaw_bend = robot_model(cfg.variant).spine == "yaw"
 sid = robot.joint_names.index(SPINE_JOINT_NAME) if yaw else None
 # hip-pair midpoints along the body from the spine axis (robot_2imu.xml: motor axes at x -94.3 / -73.8 and 72.3 / 92.8 mm)
 A_REAR, A_FRONT = 0.08405, 0.08255
@@ -128,7 +130,7 @@ def osc(sp_deg: np.ndarray) -> tuple[float, float]:
 
 
 nw = round(WINDOW_S / dt)
-res = {"label": args.label, "checkpoint": args.checkpoint, "variant": "yaw" if yaw else "rigid", "rows": []}
+res = {"label": args.label, "checkpoint": args.checkpoint, "variant": cfg.variant, "rows": []}
 modes = (False, True) if yaw else (False,)
 lines = [f"{args.label}: {args.checkpoint}",
          f"{res['variant']} robot, {G} envs per group (rigid: {2 * G}), S tour = {STRAIGHT_S:.0f} s straight + 4 arcs of {ARC_S:.0f} s "
@@ -159,7 +161,9 @@ for si, (name, vx, wz) in enumerate(SETS):
     radius = sv / yr if yr > 1e-3 else float("inf")
     bend = math.degrees(math.atan(A_FRONT / radius) + math.atan(A_REAR / radius)) if math.isfinite(radius) else 0.0
     sp_bar = float(np.mean(sp_m))
-    r_bend = (A_FRONT + A_REAR) / 2 / math.tan(math.radians(sp_bar) / 2) if yaw and sp_bar > 0.05 else float("inf")
+    # the no-slip radius of a bend: planar yaw bend only (a roll / pitch bend does not steer the halves' headings)
+    r_bend = ((A_FRONT + A_REAR) / 2 / math.tan(math.radians(sp_bar) / 2) if yaw_bend and sp_bar > 0.05
+              else float("inf") if yaw_bend else float("nan"))
     row = {"set": name, "cmd_vx": vx, "cmd_wz": wz, "spine_locked": bool(lock), "envs": n_grp, "envs_ok": int(envs.size),
            "yaw_rate": yr, "ratio": yr / wz, "speed": sv, "radius_m": radius, "spine_deg_mean": float(np.mean(sp_m)),
            "spine_deg_std": float(np.mean(sp_s)), "osc_deg": float(np.mean(oa)), "osc_hz": float(np.median(of)),
@@ -200,7 +204,7 @@ for si, (name, vx, wz) in enumerate(SETS):
   ax2.plot(tt, arc_sign * wz, "k--", lw=0.8)
   ax2.set_ylabel("yaw command rad/s (dashed)")
   axs[1, si].axhline(0, color="k", lw=0.4)
-  axs[1, si].set_title("spine angle deg (+ = bent to the left)")
+  axs[1, si].set_title("spine angle deg (" + {"yaw": "+ = bent to the left", "roll": "+ = front half rolled left side down"}.get(robot_model(cfg.variant).spine, "joint angle") + ")")
   axs[1, si].set_xlabel("t s")
 axs[0, 0].set_ylabel("y m")
 fig.suptitle(f"{args.label}: S tours, first env of every group (start = green dot)")

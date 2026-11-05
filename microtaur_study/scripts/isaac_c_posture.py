@@ -43,7 +43,7 @@ from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 
 from microtaur_common.kinematics import five_bar_for  # noqa: E402
 from microtaur_common.robot_constants import LEG_JOINT_NAMES  # noqa: E402
-from microtaur_isaac import FOOT_BODY_NAMES  # noqa: E402
+from microtaur_common.robot_models import robot_model  # noqa: E402
 from microtaur_isaac import terrains as TR  # noqa: E402
 from microtaur_isaac.agents import MicrotaurTeacherPPORunnerCfg  # noqa: E402
 from microtaur_isaac.env_cfg import MicrotaurTeacherCurPlayEnvCfg  # noqa: E402
@@ -70,10 +70,10 @@ w = RslRlVecEnvWrapper(env)
 policy, policy_reset = load_policy(w, args.checkpoint)
 robot = env.scene["robot"]
 cmd = env.command_manager.get_term("twist")
-fc = feet_sensor_cfg()
+fc = feet_sensor_cfg(cfg.variant)
 fc.resolve(env.scene)
 mids = [robot.joint_names.index(n) for n in LEG_JOINT_NAMES]
-fids = [robot.body_names.index(n) for n in FOOT_BODY_NAMES]
+fids = [robot.body_names.index(n) for n in robot_model(cfg.variant).foot_body_names]
 isc = (TR.env_terrain_type_ids(t) == 2).cpu().numpy()
 lv = t.terrain_levels.cpu().numpy()
 rec = {k: [] for k in ("q", "c", "x", "roll", "fy", "done")}

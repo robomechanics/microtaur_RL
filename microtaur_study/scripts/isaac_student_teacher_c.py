@@ -70,7 +70,7 @@ w = RslRlVecEnvWrapper(env)
 act_s, reset_s = load_policy(w, args.student)
 act_t, reset_t = load_policy(w, args.teacher)
 robot, cmd, tm = env.scene["robot"], env.command_manager.get_term("twist"), env.termination_manager
-fc = feet_sensor_cfg()
+fc = feet_sensor_cfg(cfg.variant)
 fc.resolve(env.scene)
 yaw = SPINE_JOINT_NAME in robot.joint_names
 mids = [robot.joint_names.index(n) for n in LEG_JOINT_NAMES]

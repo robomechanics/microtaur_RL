@@ -58,7 +58,7 @@ from microtaur_common.robot_models import robot_model
 from microtaur_common.sim2real import Sim2RealStage
 from microtaur_common.task_params import COMMAND_NAME
 
-from .. import FOOT_BODY_NAMES, env_variant, foot_offsets_in_body
+from .. import env_variant, foot_offsets_in_body
 from .contact import foot_contact_timers
 
 if TYPE_CHECKING:
@@ -104,14 +104,16 @@ def motors_cfg(variant: str = "rigid") -> SceneEntityCfg:
   return SceneEntityCfg(ROBOT, joint_names=names, preserve_order=True)
 
 
-def feet_body_cfg() -> SceneEntityCfg:
-  """The 4 foot bodies of the articulation, leg order 1..4."""
-  return SceneEntityCfg(ROBOT, body_names=list(FOOT_BODY_NAMES), preserve_order=True)
+def feet_body_cfg(variant: str = "rigid") -> SceneEntityCfg:
+  """The 4 foot bodies of the articulation, leg order 1..4. The env cfg builds its terms with the rigid names
+  and env_cfg._retarget_feet points them at the model's; scripts pass the variant (the roll MJCF names its foot
+  bodies in another leg order)."""
+  return SceneEntityCfg(ROBOT, body_names=list(robot_model(variant).foot_body_names), preserve_order=True)
 
 
-def feet_sensor_cfg() -> SceneEntityCfg:
-  """The 4 foot bodies of the contact sensor, leg order 1..4."""
-  return SceneEntityCfg(CONTACT_SENSOR, body_names=list(FOOT_BODY_NAMES), preserve_order=True)
+def feet_sensor_cfg(variant: str = "rigid") -> SceneEntityCfg:
+  """The 4 foot bodies of the contact sensor, leg order 1..4 (variant: as feet_body_cfg)."""
+  return SceneEntityCfg(CONTACT_SENSOR, body_names=list(robot_model(variant).foot_body_names), preserve_order=True)
 
 
 # -----------------------------------------------------------------------------

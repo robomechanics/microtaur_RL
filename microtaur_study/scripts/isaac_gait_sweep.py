@@ -37,7 +37,7 @@ env = ManagerBasedRLEnv(cfg)
 t = env.scene.terrain; t.terrain_levels[:] = 0; t.env_origins[:] = t.terrain_origins[0, t.terrain_types]
 w = RslRlVecEnvWrapper(env)
 cmd = env.command_manager.get_term("twist"); robot = env.scene["robot"]; rm = env.reward_manager
-fc = feet_sensor_cfg(); fc.resolve(env.scene)
+fc = feet_sensor_cfg(cfg.variant); fc.resolve(env.scene)
 SPEEDS = torch.tensor([0.10, 0.20, 0.35], device=env.device)[torch.arange(N, device=env.device) % 3]
 names = list(rm.active_terms)
 def corr(a, b):

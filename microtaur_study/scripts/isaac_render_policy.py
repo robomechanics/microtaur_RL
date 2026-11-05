@@ -142,7 +142,7 @@ trace = {k: [] for k in ("t", "cmd_vx", "cmd_wz", "wz", "vx", "x", "y", "yaw", "
 if args.trace:
   from microtaur_isaac.mdp.contact import foot_contact_timers
   from microtaur_isaac.mdp.observations import feet_sensor_cfg
-  fsc = feet_sensor_cfg()
+  fsc = feet_sensor_cfg(cfg.variant)
   fsc.resolve(env.scene)
 with torch.inference_mode():
   for k in range(args.steps):
