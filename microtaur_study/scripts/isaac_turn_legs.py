@@ -7,7 +7,10 @@ Every A_flat env drives the turn tour of isaac_render_policy.py --tour (straight
 measured yaw rate (body z) and forward speed over the segment's last 4 s (turns) or all of it (straight), and
 on the yaw robot the spine angle (mean, std). Virtual leg r = |foot - motor-pivot midpoint| (five-bar FK of the
 robot's own legs, kinematics.five_bar_for): the stand value, and over the straight segments per leg the stance
-mean / min / max and the swing minimum, theta range; root height above the ground.
+mean / min / max and the swing minimum, theta range; root height above the ground. Stride per side: over the
+last 4 s of every segment, the stance sweep speed of the left legs (RL, FL) and the right legs (RR, FR) = how
+fast a planted foot moves back in its leg plane (FK foot x, body-forward), and the yaw rate a skid-free tracked
+vehicle would get from it, (v_right - v_left) / 0.1 m track: does the policy turn by stride length?
 """
 
 from __future__ import annotations
@@ -74,7 +77,7 @@ K = five_bar_for(cfg.variant)
 seg_of = []
 for i, (_, _, _, dur) in enumerate(TOUR):
   seg_of += [i] * round(dur / env.step_dt)
-rec = {k: [] for k in ("wz", "vx", "spine", "r", "th", "c", "z", "done")}
+rec = {k: [] for k in ("wz", "vx", "spine", "r", "th", "fx", "c", "z", "done")}
 with torch.inference_mode():
   obs = w.get_observations()
   for k, sg in enumerate(seg_of):
@@ -91,6 +94,7 @@ with torch.inference_mode():
     rec["spine"].append(d.joint_pos[:, sid].cpu().numpy().copy() if yaw else np.zeros(env.num_envs))
     rec["r"].append(torch.hypot(fx, fz).cpu().numpy().copy())
     rec["th"].append(torch.atan2(fx, -fz).cpu().numpy().copy())
+    rec["fx"].append(fx.cpu().numpy().copy())
     rec["c"].append(foot_contact_timers(env, fc)[0].cpu().numpy().copy())
     rec["z"].append((d.root_link_pos_w[:, 2] - t.env_origins[:, 2]).cpu().numpy().copy())
     rec["done"].append(dones.cpu().numpy().copy())
@@ -114,6 +118,21 @@ for i, (name, vx, wz, dur) in enumerate(TOUR):
   ratio = f"({wz_m / wz:4.2f})" if wz else "      "
   lines.append(f"{name:8s} | {vx:.2f}  {wz:+.2f}  | {wz_m:+.3f} {ratio}        | {vx_m:.3f}  | " +
                (f"{row['spine_deg_mean']:+5.2f} +- {row['spine_deg_std']:.2f}" if yaw else "n/a (rigid)"))
+# stride per side: stance sweep speed (planted foot moving back in its leg plane) of the left / right legs
+LEFT_LEGS, RIGHT_LEGS = [1, 2], [0, 3]  # leg index 0..3 = RR, RL, FL, FR
+dfx = np.diff(R["fx"], axis=0) / env.step_dt  # [T-1, N, 4]
+planted = (R["c"][1:] > 0.5) & (R["c"][:-1] > 0.5)
+lines += ["", "stride per side (last 4 s of each segment): stance sweep speed mm/s (planted foot moving back) | "
+          "skid-free yaw rate from it, (v_R - v_L) / 0.1 m"]
+for i, (name, vx, wz, dur) in enumerate(TOUR):
+  idx = np.nonzero(seg[1:] == i)[0][-last4:]
+  m = alive[1:][idx][..., None] & planted[idx]  # [S, N, 4]
+  sweep = -dfx[idx]
+  v_l = float(sweep[..., LEFT_LEGS][m[..., LEFT_LEGS]].mean()) if m[..., LEFT_LEGS].any() else float("nan")
+  v_r = float(sweep[..., RIGHT_LEGS][m[..., RIGHT_LEGS]].mean()) if m[..., RIGHT_LEGS].any() else float("nan")
+  res["segments"][i].update({"sweep_left_m_s": v_l, "sweep_right_m_s": v_r, "skid_free_yaw_rate": (v_r - v_l) / 0.1})
+  lines.append(f"{name:8s} | cmd wz {wz:+.2f} | left {v_l * 1e3:6.1f}  right {v_r * 1e3:6.1f}  (R - L {1e3 * (v_r - v_l):+6.1f}) | "
+               f"skid-free {(v_r - v_l) / 0.1:+.3f} rad/s vs measured {res['segments'][i]['yaw_rate']:+.3f}")
 # virtual legs while trotting straight
 st_idx = np.nonzero(np.isin(seg, [0, 2, 4]))[0]
 st_idx = st_idx[st_idx > round(1.0 / env.step_dt)]  # skip the first second after the reset
