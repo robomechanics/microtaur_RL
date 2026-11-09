@@ -1,0 +1,15 @@
+roll1_teacher: /home/rml3/Documents/ben/spine/runs_local/pipeline/logs/rsl_rl/microtaur_isaac_teacher/2026-11-05_00-14-37_roll1/model_5999.pt
+roll_uno robot, 20 A_flat envs, turn tour; envs that reset: 0
+segment  | cmd vx  cmd wz | yaw rate rad/s (ratio) | vx m/s | spine deg mean +- std
+straight | 0.20  +0.00  | +0.004               | 0.186  | -0.00 +- 0.65
+left     | 0.15  +0.25  | +0.071 (0.28)        | 0.162  | +0.66 +- 0.70
+straight | 0.20  +0.00  | -0.001               | 0.204  | +0.02 +- 0.66
+right    | 0.15  -0.25  | -0.066 (0.27)        | 0.164  | -0.75 +- 0.70
+straight | 0.20  +0.00  | +0.004               | 0.207  | -0.04 +- 0.64
+
+virtual leg r (mm), straight trotting; stand pose r = 74.70 mm; root height 90.9 mm
+leg | stance mean  min   max | swing min (retracted) | theta range deg
+ 1  |   79.1   73.5  85.1 |   58.7                | -22.3 ..  -4.4
+ 2  |   79.2   73.5  85.5 |   58.7                | -22.3 ..  -4.8
+ 3  |  102.7   98.2 105.8 |   77.5                |  -6.2 .. +13.2
+ 4  |  102.5   89.3 105.9 |   77.3                |  -6.6 .. +13.3

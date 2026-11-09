@@ -59,7 +59,51 @@ Spine sign conventions:
 - **pitch:** pitch1 holds −9° to −18°. Its rear legs are about 15 mm shorter than the front ones, which suggests the rear
   half is tail-down. This is inferred from leg lengths, not yet checked in frames.
 
-Model notes:
+### 2.1 How the four models were set up (Ben, 11-04: battery kept, MKR out, UNO Q at the yaw / rigid pose, IMUs)
+
+The same procedure was applied to every robot, starting from each robot's current model (which carries the battery and
+the MKR1000):
+1. Remove the MKR1000 (32 g): subtract its mass, COM and inertia from the host body (uniform density over its meshes,
+   parallel-axis theorem) and delete its geoms.
+2. Add the UNO Q with its DYNAMIXEL shield (41 g, Aryan's measurement and box inertia) and a 3 g board per IMU.
+   - Roll and pitch: the UNO Q goes to the yaw / rigid pose, upright on the rear half at the same place relative to the
+     rear leg pivots. Aryan's files had it flat on the spine.
+3. Keep the battery (120 g). Where Aryan's hardware XML had dropped the battery geoms (rigid, roll, pitch; the mass had
+   stayed), copy them back.
+4. Fix the leg links:
+   - yaw and roll: the 16 leg links get the rigid model's COM / inertia (the upstream XMLs have 7 unrotated leg
+     inertials);
+   - pitch: all b links get the mirror mean of legs 3 / 4 (legs 1 / 2 were 24–26 mm off).
+5. Pitch only: move the root frame to the centre of the four hips (Aryan's origin was 17 / 24 mm off).
+
+Masses come from Aryan's ledger (`hardware_calibration/active_yaw_microtaur.json`).
+
+| robot | source model | mass before → after | COM in root frame (mm) | spine joint range (XML) | stand root height |
+|---|---|---|---|---|---|
+| rigid_uno | upstream `e7c9381` rigid_microtaur_for_hardware (= the 0.540 kg 09-20 model) | 0.540 → 0.552 kg | (−2.8, −0.6, 7.8) | – | 70.2 mm |
+| yaw_uno | Ben's `active_yaw_2imu.xml` (leg inertials fixed) | 0.724 → 0.739 kg | (3.8, 0.2, 7.8) | ±0.35 rad (20.1°) | 76.5 mm |
+| roll_uno | upstream `e7c9381` active_twist_microtaur_for_hardware | 0.520 → 0.494 kg | (7.2, 0.1, 4.4) | ±0.35 rad | 80.8 mm |
+| pitch_uno | upstream `c6d3dcd` active_pitch_microtaur_for_hardware (fixed motor attachment) | 0.535 → 0.509 kg | (6.1, −0.6, 8.5) | ±0.52 rad (30°) | 68.2 mm |
+
+Common to all four:
+- **Spine limit.** Every policy is limited to ±0.33 rad (18.9°) by the spine action clamp, whatever the XML range.
+- **Motors.**
+  - Legs: XL330, identical in all models.
+  - Spine: XL330-M288. Its PD / armature were identified on yaw (3.4 Hz, ζ 0.34); roll and pitch use the same values
+    (assumed, not measured).
+- **Feet** sit at y ±50 mm in every model. Foot angle 4.32° on rigid / pitch, 5.41° on yaw / roll (yaw: which one is
+  physically right is unconfirmed).
+
+Where things are:
+- Build scripts and logs:
+  - rigid / yaw / roll: `/home/rml3/Documents/ben/spine/models_uno_imu_2026-11-04/` (`build_uno_imu.py`,
+    `<robot>/build_log_battery.json`);
+  - pitch: `/home/rml3/Documents/ben/spine/models_uno_imu_2026-11-09/`.
+- No-battery versions (`robot_nobattery.xml`) are in the same folders but were not trained.
+- Model previews: `docs/figures/2026-11-09/robots/{rigid,yaw,roll,pitch}_uno_imu.png`.
+
+### 2.2 Model notes
+
 - **Leg order.** Leg 1 is rear right, 2 rear left, 3 front left, 4 front right. Joint names are canonical in every model
   (`leg{i}_{a,e}_joint_act` active, `leg{i}_{b,d}_joint` passive). Only roll names its *foot bodies* in another order.
 - **Closed chains.** Each leg is a five-bar, closed in the MJCF by 8 `<connect>` equality constraints. In Isaac it is a
@@ -153,6 +197,22 @@ right 6 s, straight 3 s; statistics over the last 4 s of each segment; ratio is 
 Videos (2×2 grid, same iteration for all four, oblique camera, path inset):
 - `/home/rml3/Documents/ben/spine/figures/isaac_play/four_robots_2026-11-09/four_robots_turn_tour_it2000.mp4`
 - The `…_it5999.mp4` version is generated automatically after pitch1 ends.
+
+### 4.3 Result files
+
+**In the repo** (`docs/figures/2026-11-09/`):
+- `eval/{ru1,yu1,roll1}_summary.md`: the full pipeline evals (gait, speed, terrain, mastery, C posture, turning,
+  S tours), teacher and student.
+- `turn_sweep/turn_legs_<run>_<it>.txt`: every turn tour of §4.2.
+- `robots/*.png`: the four models.
+- `four_robots_it2000_t09s.jpg` / `_t17s.jpg`: frames of the 2×2 video (left turn / right turn).
+
+**Kept local** (too big for git):
+- Videos: `/home/rml3/Documents/ben/spine/figures/isaac_play/` (`four_robots_2026-11-09/`, `uno_batch_2026-11-07/`,
+  `roll1_2026-11-05/`).
+- Per-run eval folders with npz traces: `/home/rml3/Documents/ben/spine/runs_local/pipeline/<run>/`.
+- Turn sweeps with json: `/home/rml3/Documents/ben/spine/figures/isaac_eval/turn_sweep_uno_2026-11-07/`.
+- Differential stride: `/home/rml3/Documents/ben/spine/figures/isaac_eval/diff_stride_turn_2026-11-06/`.
 
 ---
 

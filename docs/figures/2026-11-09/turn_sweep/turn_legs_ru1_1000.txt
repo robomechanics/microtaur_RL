@@ -1,0 +1,22 @@
+ru1_1000: /home/rml3/Documents/ben/spine/runs_local/pipeline/logs/rsl_rl/microtaur_isaac_teacher/2026-11-06_11-26-27_ru1/model_1000.pt
+rigid_uno robot, 20 A_flat envs, turn tour; envs that reset: 0
+segment  | cmd vx  cmd wz | yaw rate rad/s (ratio) | vx m/s | spine deg mean +- std
+straight | 0.20  +0.00  | -0.001               | 0.209  | n/a (rigid)
+left     | 0.15  +0.25  | +0.002 (0.01)        | 0.190  | n/a (rigid)
+straight | 0.20  +0.00  | +0.001               | 0.226  | n/a (rigid)
+right    | 0.15  -0.25  | -0.008 (0.03)        | 0.185  | n/a (rigid)
+straight | 0.20  +0.00  | -0.001               | 0.227  | n/a (rigid)
+
+stride per side (last 4 s of each segment): stance sweep speed mm/s (planted foot moving back) | skid-free yaw rate from it, (v_R - v_L) / 0.1 m
+straight | cmd wz +0.00 | left  195.2  right  193.8  (R - L   -1.4) | skid-free -0.014 rad/s vs measured -0.001
+left     | cmd wz +0.25 | left  156.8  right  200.9  (R - L  +44.1) | skid-free +0.441 rad/s vs measured +0.002
+straight | cmd wz +0.00 | left  227.8  right  230.6  (R - L   +2.8) | skid-free +0.028 rad/s vs measured +0.001
+right    | cmd wz -0.25 | left  196.3  right  156.5  (R - L  -39.8) | skid-free -0.398 rad/s vs measured -0.008
+straight | cmd wz +0.00 | left  231.7  right  230.9  (R - L   -0.8) | skid-free -0.008 rad/s vs measured -0.001
+
+virtual leg r (mm), straight trotting; stand pose r = 73.65 mm; root height 83.3 mm
+leg | stance mean  min   max | swing min (retracted) | theta range deg
+ 1  |   88.9   82.9  93.0 |   67.3                | -16.7 ..  +0.9
+ 2  |   89.8   84.7  93.6 |   66.8                | -16.9 ..  +1.3
+ 3  |   86.5   83.7  91.8 |   61.2                |  -6.0 .. +17.5
+ 4  |   86.0   82.6  90.9 |   61.2                |  -7.4 .. +17.1
