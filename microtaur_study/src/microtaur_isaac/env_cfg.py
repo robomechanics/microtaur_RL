@@ -617,7 +617,7 @@ class MicrotaurYawTeacherCurStudentPlayEnvCfg(MicrotaurYawTeacherCurPlayEnvCfg):
 # One Teacher-Cur / -Play / -Student / -Student-Play cfg per model, all with the same observations: leg_polar_obs
 # on for every robot (the yaw tasks had it and the rigid ones did not, 10-29 .. 11-04). No per-robot energy
 # default: the pipeline recipe sets the same motor-energy ramp for every robot, teacher and student.
-UNO_VARIANTS = {"rigid_uno": "RigidUno", "yaw_uno": "YawUno", "roll_uno": "RollUno"}
+UNO_VARIANTS = {"rigid_uno": "RigidUno", "yaw_uno": "YawUno", "roll_uno": "RollUno", "pitch_uno": "PitchUno"}
 _UNO_BASES = {"TeacherCurEnvCfg": MicrotaurTeacherCurEnvCfg, "TeacherCurPlayEnvCfg": MicrotaurTeacherCurPlayEnvCfg,
               "TeacherCurStudentEnvCfg": MicrotaurTeacherCurStudentEnvCfg,
               "TeacherCurStudentPlayEnvCfg": MicrotaurTeacherCurStudentPlayEnvCfg}

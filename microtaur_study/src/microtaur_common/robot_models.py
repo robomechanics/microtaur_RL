@@ -101,6 +101,21 @@ MODELS: dict[str, RobotModel] = {
                      "leglink2_v2_with_leg_down_2"),
     foot_offset_in_body_m=_YAW_FOOT_OFFSETS, foot_extension_angle_rad=math.radians(5.40982), spine="roll",
     other_half_body="twisting_microtaur_top_half", imu2_quat_in_other_half=(0.707107, 0.0, 0.707107, 0.0)),
+  # Active pitch, upstream c6d3dcd (2026-11-08 "fixed pitch motor attachment points": legs now assembled as the rigid
+  # robot's, same foot geometry / offsets / foot angle), built by models_uno_imu_2026-11-09/build_uno_imu.py (UNO Q at
+  # the yaw pose, IMU boards, battery kept, root frame moved to the hip centre, the legs 1 / 2 b-link inertials
+  # copied from the same-side front leg, bodies / meshes renamed: USD prim names cannot start with a digit). ROOT = front half (legs 3, 4, root IMU = MJCF imu_site); the rear half
+  # (legs 1, 2, UNO Q) carries the second IMU (MJCF imu2_site, aligned with the root at spine 0); spine axis +y of
+  # the root (pitch), all four hips 11.5 mm above the root origin. Spine actuator assumed the yaw's XL330-M288.
+  "pitch_uno": RobotModel(
+    "pitch_uno", asset_dir=_ASSETS / "active_pitch_microtaur", xml="robot_uno_battery.xml", usd="microtaur_pitch_uno.usda",
+    visual_usd="microtaur_pitch_uno_visual.usd", root_body="pitch_microtaur_top_half_1", total_mass_kg=0.50927592,
+    nominal_root_height_m=0.06817292823489918, hip_z_root_m=(0.0115, 0.0115, 0.0115, 0.0115),
+    foot_body_names=("leg1_d_link", "leg2_d_link", "leg3_d_link", "leg4_d_link"),
+    foot_offset_in_body_m=((-0.0170594, -0.0811919, -0.0015), (-0.0170594, 0.0811919, -0.0015),
+                           (0.0827296, 0.00624248, -0.0015), (0.0827296, -0.00624248, -0.0015)),
+    foot_extension_angle_rad=math.radians(4.31513), spine="pitch",
+    other_half_body="pitch_microtaur_rear_half", imu2_quat_in_other_half=(0.0, 0.0, 0.70710678, 0.70710678)),
 }
 
 

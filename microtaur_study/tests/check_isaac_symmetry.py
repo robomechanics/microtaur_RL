@@ -64,6 +64,10 @@ from microtaur_common.robot_models import robot_model  # noqa: E402
 
 MODEL = robot_model(args.variant)
 YAW = MODEL.has_spine  # any spine robot
+# the spine value of the mirrored robot: a yaw / roll bend flips, a pitch bend does not (robot_models)
+SPINE_SIGN = MODEL.spine_mirror_sign if YAW else -1.0
+if not args.copy:
+  mirror_joints = lambda x: SYM.mirror_joints(x, SPINE_SIGN)  # noqa: E731
 m = compile_model(MODEL.xml_path)
 d = mujoco.MjData(m)
 from microtaur_common.kinematics import FULL_JOINT_NAMES  # noqa: E402
@@ -102,7 +106,7 @@ robot = env.scene["robot"]
 term = env.action_manager.get_term("joint_pos")
 names = robot.joint_names
 jperm = [names.index(n.replace(f"leg{int(n[3])}_", f"leg{PARTNER[int(n[3])]}_", 1)) if n.startswith("leg") else i
-         for i, n in enumerate(names)]  # the spine joint maps to itself (and is negated)
+         for i, n in enumerate(names)]  # the spine joint maps to itself (times SPINE_SIGN below)
 NA = env.action_manager.total_action_dim
 log(f"[env] variant {args.variant}, {NA} actions, joints {names}, obs groups "
     + ", ".join(f"{k} {list(env.observation_manager.active_terms[k])}" for k in env.observation_manager.active_terms))
@@ -129,10 +133,16 @@ vel[1] = vel[0] * torch.tensor([1.0, F, 1.0, F, 1.0, F], device=env.device)
 jp, jv = dat.joint_pos.clone(), dat.joint_vel.clone()
 perm = list(range(len(names))) if args.copy else jperm
 jp[1], jv[1] = F * jp[0, perm], F * jv[0, perm]
+if YAW and not args.copy:
+  sid = names.index("spine_joint_act")
+  jp[1, sid], jv[1, sid] = SPINE_SIGN * jp[0, sid], SPINE_SIGN * jv[0, sid]
 ids = torch.tensor([1], device=env.device)
 robot.write_root_link_pose_to_sim(pose[1:], env_ids=ids)
 robot.write_root_link_velocity_to_sim(vel[1:], env_ids=ids)
 robot.write_joint_state_to_sim(jp[1:], jv[1:], env_ids=ids)
+# an env may have terminated in the random warm-up steps (pitch_uno: base_too_low): give env 1 env 0's episode step,
+# or the action pipeline re-seeds env 1 from its pose as a fresh reset (episode step <= 1) and the targets differ
+env.episode_length_buf[1] = env.episode_length_buf[0]
 core = term.core
 for buf in ("requested", "safe", "applied"):
   x = getattr(core, buf)
@@ -146,7 +156,7 @@ core._bias[1] = core._bias[0] if args.copy else -core._bias[0][[2, 3, 0, 1, 6, 7
 core._delay_steps[1] = core._delay_steps[0]
 term._raw[1] = mirror_joints(term._raw[0:1])[0]
 if getattr(term, "_spine", False):
-  term._spine_hold[1] = term._spine_hold[0] if args.copy else -term._spine_hold[0]
+  term._spine_hold[1] = term._spine_hold[0] if args.copy else SPINE_SIGN * term._spine_hold[0]
 env.action_manager._action[1] = mirror_joints(env.action_manager._action[0:1])[0]
 env.action_manager._prev_action[1] = mirror_joints(env.action_manager._prev_action[0:1])[0]
 
@@ -165,7 +175,10 @@ for t in range(args.steps):
       if e > worst_term[1]:
         worst_term = (n, e)
     line += f" | {grp} max {float(diff.max()):.2e} (worst {worst_term[0]} {worst_term[1]:.2e})"
-  jd = float((dat.joint_pos[1] - F * dat.joint_pos[0, perm]).abs().max())
+  jexp = F * dat.joint_pos[0, perm]
+  if YAW and not args.copy:
+    jexp[names.index("spine_joint_act")] = SPINE_SIGN * dat.joint_pos[0, names.index("spine_joint_act")]
+  jd = float((dat.joint_pos[1] - jexp).abs().max())
   line += f" | sim joint_pos {jd:.1e}"
   log(line)
 LOG.close()
